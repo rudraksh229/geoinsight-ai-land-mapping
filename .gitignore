@@ -1,0 +1,77 @@
+# ==========================================
+# GeoInsight AI - Git Ignore
+# React + Vite + FastAPI + PostgreSQL + ML
+# ==========================================
+
+# ---------- Frontend / Node ----------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite build files
+dist/
+.vite/
+
+# ---------- Environment & Secrets ----------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ---------- FastAPI / Python Tools ----------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+
+# ---------- Logs ----------
+*.log
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Local Database ----------
+*.sqlite3
+*.db
+
+# ==========================================
+# IMPORTANT:
+# ML MODEL FILES ARE NOT IGNORED
+# ==========================================
+
+# xgboost_land_classifier.json -> WILL BE COMMITTED
+# label_encoder.joblib         -> WILL BE COMMITTED
+
+# Do NOT add:
+# *.json
+# *.joblib
+# models/
+# because your AI model may be required by the application.
