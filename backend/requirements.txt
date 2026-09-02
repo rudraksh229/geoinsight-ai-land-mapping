@@ -1,2 +1,1 @@
-fastapi
-uvicorn
+fastapiuvicornSQLAlchemypsycopg2-binarypython-dotenvpydanticrequestsjoblibnumpyscikit-learnxgboostearthengine-apigeopysss
