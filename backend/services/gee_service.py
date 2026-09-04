@@ -1,25 +1,13 @@
 import ee
-
-PROJECT_ID = "geoinsight-ai-503616"
-
-
-def initialize_gee():
-    """
-    Initialize Google Earth Engine.
-    """
-    try:
-        ee.Initialize(project=PROJECT_ID)
-    except Exception:
-        ee.Authenticate()
-        ee.Initialize(project=PROJECT_ID)
+from gee_config import init_gee
 
 
 def get_map_metadata():
     """
-    Returns basic metadata about Sentinel-2 imagery.
+    Returns basic metadata about Sentinel-2 imagery safely.
     """
-
-    initialize_gee()
+    # Safe lazy initialization via Service Account
+    init_gee()
 
     collection = (
         ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")

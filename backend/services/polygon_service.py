@@ -1,10 +1,11 @@
 import json
 import ee
-
-ee.Initialize(project="geoinsight-ai-503616")
+from gee_config import init_gee
 
 
 def analyze_polygon(file_bytes):
+    # Safe lazy initialization on execution
+    init_gee()
 
     geojson = json.loads(file_bytes.decode())
 
@@ -90,3 +91,4 @@ def analyze_polygon(file_bytes):
         "barren_ha": barren.divide(10000).getInfo(),
         "average_ndvi": ee.Number(mean_ndvi).getInfo()
     }
+    

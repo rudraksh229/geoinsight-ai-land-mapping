@@ -1,9 +1,10 @@
 import ee
-
-ee.Initialize(project="geoinsight-ai-503616")
+from gee_config import init_gee
 
 
 def get_ndvi_tiles(latitude, longitude, radius):
+    # Safe lazy initialization on execution
+    init_gee()
 
     point = ee.Geometry.Point([longitude, latitude])
     region = point.buffer(radius)

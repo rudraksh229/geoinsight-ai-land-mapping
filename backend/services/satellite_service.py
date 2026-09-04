@@ -1,9 +1,10 @@
 import ee
-
-ee.Initialize(project="geoinsight-ai-503616")
+from gee_config import init_gee
 
 
 def get_satellite_image(latitude, longitude, radius):
+    # Safe lazy initialization on execution
+    init_gee()
 
     point = ee.Geometry.Point([longitude, latitude])
     region = point.buffer(radius)
@@ -29,3 +30,4 @@ def get_satellite_image(latitude, longitude, radius):
     return {
         "image_url": url
     }
+    

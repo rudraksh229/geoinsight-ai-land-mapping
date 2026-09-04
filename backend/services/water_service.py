@@ -1,9 +1,10 @@
 import ee
-
-ee.Initialize(project="geoinsight-ai-503616")
+from gee_config import init_gee
 
 
 def detect_water(latitude, longitude, radius):
+    # Safe lazy initialization on execution
+    init_gee()
 
     point = ee.Geometry.Point([longitude, latitude])
     region = point.buffer(radius)
@@ -40,11 +41,15 @@ def detect_water(latitude, longitude, radius):
         .get("area")
     )
 
-    water_percent = water.divide(total_area).multiply(100)
+    water_percent_num = water.divide(total_area).multiply(100)
+    
+    # Store fetched values once to avoid multiple blocking GEE network calls
+    percent = water_percent_num.getInfo()
+    water_area_ha = round(water.divide(10000).getInfo(), 2)
 
-    if water_percent.getInfo() > 40:
+    if percent > 40:
         status = "High Water Presence"
-    elif water_percent.getInfo() > 15:
+    elif percent > 15:
         status = "Moderate Water Presence"
     else:
         status = "Low Water Presence"
@@ -53,7 +58,8 @@ def detect_water(latitude, longitude, radius):
         "latitude": latitude,
         "longitude": longitude,
         "radius_meters": radius,
-        "water_area_ha": round(water.divide(10000).getInfo(), 2),
-        "water_percentage": round(water_percent.getInfo(), 2),
+        "water_area_ha": water_area_ha,
+        "water_percentage": round(percent, 2),
         "status": status,
     }
+    

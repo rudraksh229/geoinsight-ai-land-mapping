@@ -1,9 +1,10 @@
 import ee
-
-ee.Initialize(project="geoinsight-ai-503616")
+from gee_config import init_gee
 
 
 def vegetation_timeseries(latitude, longitude, radius, start_date, end_date):
+    # Safe lazy initialization on execution
+    init_gee()
 
     point = ee.Geometry.Point([longitude, latitude])
     region = point.buffer(radius)
@@ -55,4 +56,4 @@ def vegetation_timeseries(latitude, longitude, radius, start_date, end_date):
         "number_of_images": size,
         "ndvi_timeseries": results,
     }
-
+    

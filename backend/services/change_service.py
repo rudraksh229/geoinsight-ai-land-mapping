@@ -1,9 +1,10 @@
 import ee
-
-ee.Initialize(project="geoinsight-ai-503616")
+from gee_config import init_gee
 
 
 def detect_change(latitude, longitude, radius, start_date, end_date):
+    # Safe lazy initialization on execution
+    init_gee()
 
     point = ee.Geometry.Point([longitude, latitude])
     region = point.buffer(radius)
@@ -58,3 +59,4 @@ def detect_change(latitude, longitude, radius, start_date, end_date):
         "average_ndvi_change": round(avg_change, 3),
         "status": status,
     }
+    
