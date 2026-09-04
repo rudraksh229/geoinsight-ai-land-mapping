@@ -1,15 +1,49 @@
 import ee
-
+import json
+import os
+import math
 
 # ==========================================
 # EARTH ENGINE INITIALIZATION
 # ==========================================
 
-try:
-    ee.Initialize(project="geoinsight-ai-503616")
-except Exception:
-    ee.Authenticate()
-    ee.Initialize(project="geoinsight-ai-503616")
+gee_key_str = os.getenv("EE_SERVICE_ACCOUNT_KEY")
+
+if gee_key_str:
+    try:
+        # Render / Production Setup using Service Account JSON Key
+        key_dict = json.loads(gee_key_str)
+        credentials = ee.ServiceAccountCredentials(
+            key_dict['client_email'],
+            key_data=gee_key_str
+        )
+        ee.Initialize(credentials, project="geoinsight-ai-503616")
+        print("GEE initialized successfully via Service Account!")
+    except Exception as e:
+        print(f"Service Account Init Error: {e}")
+        try:
+            ee.Initialize(project="geoinsight-ai-503616")
+        except Exception as fallback_err:
+            print(f"Fallback Init Failed: {fallback_err}")
+else:
+    # Local Machine Development Fallback
+    try:
+        ee.Initialize(project="geoinsight-ai-503616")
+    except Exception:
+        ee.Authenticate()
+        ee.Initialize(project="geoinsight-ai-503616")
+
+
+# ==========================================
+# CIRCLE AREA
+# ==========================================
+
+def math_pi_area(radius):
+    return (
+        math.pi *
+        (radius ** 2) /
+        10000
+    )
 
 
 # ==========================================
@@ -216,7 +250,6 @@ def classify_landcover(latitude: float, longitude: float, radius: int):
 
         info = class_info[class_id]
 
-        # reduceToVectors returns pixel-area sum
         area_m2 = float(
             properties.get(
                 "sum",
@@ -318,19 +351,3 @@ def classify_landcover(latitude: float, longitude: float, radius: int):
         }
 
     }
-
-
-# ==========================================
-# CIRCLE AREA
-# ==========================================
-
-def math_pi_area(radius):
-
-    import math
-
-    return (
-        math.pi *
-        (radius ** 2) /
-        10000
-    )
-    
