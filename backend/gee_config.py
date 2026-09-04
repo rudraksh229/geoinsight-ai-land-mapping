@@ -13,22 +13,39 @@ def init_gee():
 
     if gee_key_str:
         try:
-            # Clean string format for multiline JSON strings
+            # Clean string format
             gee_key_str = gee_key_str.strip()
-            key_dict = json.loads(gee_key_str)
             
-            # Ensure private key handles newlines correctly
-            if "private_key" in key_dict:
+            # JSON parsing with strict=False to handle potential control characters
+            key_dict = json.loads(gee_key_str, strict=False)
+            
+            # Fix newline breaks in private key
+            if "private_key" in key_dict and isinstance(key_dict["private_key"], str):
                 key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
 
+            # Correct GEE Credentials Initialization using raw dict
             credentials = ee.ServiceAccountCredentials(
-                key_dict['client_email'],
-                key_data=json.dumps(key_dict)  # Processed JSON string pass karein
+                email=key_dict.get('client_email'),
+                key_data=key_dict.get('private_key') # Direct private_key string accept karta hai
             )
+            
             ee.Initialize(credentials, project="geoinsight-ai-503616")
             _is_initialized = True
             print("GEE initialized successfully via Service Account!")
+            
         except Exception as e:
             print(f"Service Account Init Error: {e}")
+            # Crash hone se bachane ke liye safe fallback attempt
+            try:
+                ee.Initialize(project="geoinsight-ai-503616")
+                _is_initialized = True
+                print("GEE initialized via Default Application Credentials!")
+            except Exception as fallback_err:
+                print(f"Fallback GEE Init failed: {fallback_err}")
     else:
         print("WARNING: EE_SERVICE_ACCOUNT_KEY not found in Environment Variables!")
+        try:
+            ee.Initialize(project="geoinsight-ai-503616")
+            _is_initialized = True
+        except Exception as err:
+            print(f"Default GEE Init Error: {err}")

@@ -7,6 +7,12 @@ from fastapi.responses import JSONResponse
 from database import engine
 from models import Base
 
+# Database tables setup inside try-except to avoid boot crash
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as db_err:
+    print(f"Database sync warning: {db_err}")
+
 from routers import (
     dashboard, reports, geography, landcover, vegetation, 
     barren, water, builtup, change, suitability, timeseries, 
@@ -14,35 +20,35 @@ from routers import (
     analytics, csv_export, excel_export, auth, polygon, ai, mapping
 )
 
-# Database tables creation
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI()
 
-# FIX: Dynamic CORS Middleware (Credentials True hone par Wildcard wildcard error nahi dega)
+# Perfect CORS Middleware configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://.*",  # Sabhi http/https origins safely allow karega
+    allow_origin_regex=r"https?://.*",  # Sabhi Vercel aur Localhost domains allow karega
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global Exception Handler: 502/Crash ki jagah clean CORS-friendly JSON Error response dega
+# Global Crash Handler: 502/Crash ki jagah clean CORS-friendly JSON Error response dega
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     print(f"Unhandled Server Error: {str(exc)}")
     return JSONResponse(
         status_code=500,
-        content={"status": "error", "message": f"Server Error: {str(exc)}"}
+        content={"status": "error", "message": f"Server Error: {str(exc)}"},
+        headers={
+            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Credentials": "true",
+        }
     )
 
-# Health Check route
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Land Mapping API Running"}
 
-# Routers Included
+# Include Routers
 app.include_router(dashboard.router)
 app.include_router(reports.router)
 app.include_router(geography.router)
