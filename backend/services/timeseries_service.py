@@ -35,7 +35,7 @@ else:
 # VEGETATION TIMESERIES FUNCTION
 # ==========================================
 
-def vegetation_timeseries(latitude, longitude, radius, start_date, end_date):
+def vegetation_health(latitude, longitude, radius, start_date, end_date):
 
     point = ee.Geometry.Point([longitude, latitude])
     region = point.buffer(radius)
