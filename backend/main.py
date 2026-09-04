@@ -1,60 +1,48 @@
 import os
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from database import engine
 from models import Base
 
-from routers import dashboard, reports
-from routers import geography
-from routers import landcover
-from routers import vegetation
-from routers import barren
-from routers import water
-from routers import builtup
-from routers import change
-from routers import suitability
-from routers import timeseries
-from routers import map
-from routers import geocode
-# from routers import report_generation
-from routers import pdf
-from routers import recommendation
-from routers import satellite
-from routers import compare
-from routers import analytics
-from routers import csv_export
-from routers import excel_export
-from routers import auth
-from routers import polygon
-from routers import ai
-from routers import mapping
+from routers import (
+    dashboard, reports, geography, landcover, vegetation, 
+    barren, water, builtup, change, suitability, timeseries, 
+    map, geocode, pdf, recommendation, satellite, compare, 
+    analytics, csv_export, excel_export, auth, polygon, ai, mapping
+)
 
+# Database tables creation
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Allow production frontend domain along with localhost
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "*"  # Production frontend URL ready na hone par temporary open rakhein
-]
-
+# FIX: Dynamic CORS Middleware (Credentials True hone par Wildcard wildcard error nahi dega)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origin_regex=r"https?://.*",  # Sabhi http/https origins safely allow karega
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Health Check route (Render ko jaldi response dene ke liye)
+# Global Exception Handler: 502/Crash ki jagah clean CORS-friendly JSON Error response dega
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"Unhandled Server Error: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"status": "error", "message": f"Server Error: {str(exc)}"}
+    )
+
+# Health Check route
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Land Mapping API Running"}
 
+# Routers Included
 app.include_router(dashboard.router)
 app.include_router(reports.router)
 app.include_router(geography.router)
@@ -68,7 +56,6 @@ app.include_router(suitability.router)
 app.include_router(timeseries.router)
 app.include_router(map.router)
 app.include_router(geocode.router)
-# app.include_router(report_generation.router)
 app.include_router(pdf.router)
 app.include_router(recommendation.router)
 app.include_router(satellite.router)
