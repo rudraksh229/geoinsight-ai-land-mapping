@@ -1,6 +1,4 @@
 import os
-import joblib
-from xgboost import XGBClassifier
 
 BASE_DIR = os.path.dirname(__file__)
 
@@ -16,25 +14,9 @@ ENCODER_PATH = os.path.join(
     "label_encoder.pkl"
 )
 
-# -----------------------------
-# Load trained model
-# -----------------------------
-
-model = XGBClassifier()
-model.load_model(MODEL_PATH)
-
-# -----------------------------
-# Load label encoder
-# -----------------------------
-
-encoder = joblib.load(ENCODER_PATH)
-
-print("LABEL ENCODER CLASSES:", encoder.classes_)
-
-
-# -----------------------------
-# Land Classification Mapping
-# -----------------------------
+# Global cached instances (Sirf pehli API request par populate honge)
+_model = None
+_encoder = None
 
 CLASS_NAMES = {
     1: "Vegetation",
@@ -45,14 +27,30 @@ CLASS_NAMES = {
 }
 
 
+def _get_model_and_encoder():
+    """Lazy loader: Serves cached model or loads on first call."""
+    global _model, _encoder
+    if _model is None or _encoder is None:
+        import joblib
+        from xgboost import XGBClassifier
+
+        _model = XGBClassifier()
+        _model.load_model(MODEL_PATH)
+        _encoder = joblib.load(ENCODER_PATH)
+        print("LABEL ENCODER CLASSES:", _encoder.classes_)
+
+    return _model, _encoder
+
+
 def predict_land(features):
+    # Retrieve cached model on runtime
+    model, encoder = _get_model_and_encoder()
 
     feature_vector = features["feature_vector"]
 
     # -----------------------------
     # Model prediction
     # -----------------------------
-
     prediction_encoded = model.predict(
         [feature_vector]
     )[0]
@@ -62,7 +60,6 @@ def predict_land(features):
     # -----------------------------
     # Prediction probabilities
     # -----------------------------
-
     probabilities = model.predict_proba(
         [feature_vector]
     )[0]
@@ -72,17 +69,14 @@ def predict_land(features):
     )
 
     # -----------------------------
-    # IMPORTANT
-    # XGBoost output is 0-based
-    # Convert to our land class ID
+    # IMPORTANT: XGBoost output is 0-based
+    # Convert to land class ID
     # -----------------------------
-
     class_id = prediction_encoded + 1
 
     # -----------------------------
     # Get readable class name
     # -----------------------------
-
     class_name = CLASS_NAMES.get(
         class_id,
         "Unknown"
@@ -93,3 +87,4 @@ def predict_land(features):
         "class_name": class_name,
         "confidence": round(confidence, 2)
     }
+    
