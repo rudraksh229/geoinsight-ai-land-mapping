@@ -1,82 +1,90 @@
 import ee
+import json
+import os
 
-ee.Initialize(project="geoinsight-ai-503616")
+# ==========================================
+# SAFE EARTH ENGINE INITIALIZATION
+# ==========================================
+
+gee_key_str = os.getenv("EE_SERVICE_ACCOUNT_KEY")
+
+if gee_key_str:
+    try:
+        key_dict = json.loads(gee_key_str)
+        credentials = ee.ServiceAccountCredentials(
+            key_dict['client_email'],
+            key_data=gee_key_str
+        )
+        ee.Initialize(credentials, project="geoinsight-ai-503616")
+        print("GEE initialized successfully via Service Account!")
+    except Exception as e:
+        print(f"Service Account Init Error: {e}")
+else:
+    print("WARNING: EE_SERVICE_ACCOUNT_KEY not found in Environment Variables!")
 
 
-def vegetation_health(latitude, longitude, radius):
+# ==========================================
+# VEGETATION TIMESERIES FUNCTION
+# ==========================================
+
+def vegetation_health(latitude, longitude, radius, start_date, end_date):
     point = ee.Geometry.Point([longitude, latitude])
     region = point.buffer(radius)
 
-    image = (
+    collection = (
         ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
         .filterBounds(region)
-        .filterDate("2024-01-01", "2024-12-31")
-        .sort("CLOUDY_PIXEL_PERCENTAGE")
-        .first()
+        .filterDate(str(start_date), str(end_date))
+        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 30))
+        .sort("system:time_start")
     )
 
-    # Calculate NDVI
-    ndvi = image.normalizedDifference(["B8", "B4"]).rename("NDVI")
-
-    # Mean NDVI
-    mean_ndvi = (
-        ndvi.reduceRegion(
+    def calculate_ndvi(image):
+        ndvi = image.normalizedDifference(["B8", "B4"]).rename("NDVI")
+        
+        stats = ndvi.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=region,
             scale=10,
-            maxPixels=1e13,
+            maxPixels=1e13
         )
-        .get("NDVI")
-    )
-
-    mean_ndvi = ee.Number(mean_ndvi)
-
-    # Vegetation Area (NDVI > 0.4)
-    vegetation_mask = ndvi.gt(0.4)
-
-    vegetation_area = (
-        ee.Image.pixelArea()
-        .updateMask(vegetation_mask)
-        .reduceRegion(
-            reducer=ee.Reducer.sum(),
-            geometry=region,
-            scale=10,
-            maxPixels=1e13,
+        
+        date_str = image.date().format("YYYY-MM-dd")
+        
+        ndvi_val = ee.Algorithms.If(
+            stats.contains("NDVI"),
+            stats.get("NDVI"),
+            0.0
         )
-        .get("area")
-    )
+        
+        return ee.Feature(None, {
+            "date": date_str,
+            "average_ndvi": ndvi_val
+        })
 
-    vegetation_area = ee.Number(vegetation_area)
+    feature_collection = collection.map(calculate_ndvi)
 
-    total_area = ee.Number(region.area())
+    data = feature_collection.reduceColumns(
+        ee.Reducer.toList(2), ["date", "average_ndvi"]
+    ).get("list").getInfo()
 
-    vegetation_percent = (
-        vegetation_area.divide(total_area)
-        .multiply(100)
-    )
-
-    # Health Classification
-    ndvi_value = mean_ndvi.getInfo()
-
-    if ndvi_value >= 0.6:
-        health = "Excellent"
-
-    elif ndvi_value >= 0.4:
-        health = "Good"
-
-    elif ndvi_value >= 0.2:
-        health = "Moderate"
-
-    else:
-        health = "Poor"
+    results = []
+    if data:
+        for entry in data:
+            date, ndvi_val = entry[0], entry[1]
+            if ndvi_val is not None:
+                results.append({
+                    "date": date,
+                    "average_ndvi": round(float(ndvi_val), 3)
+                })
 
     return {
         "latitude": latitude,
         "longitude": longitude,
         "radius_meters": radius,
-        "average_ndvi": round(ndvi_value, 3),
-        "vegetation_percent": round(
-            vegetation_percent.getInfo(), 2
-        ),
-        "vegetation_health": health,
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "number_of_images": len(results),
+        "ndvi_timeseries": results
     }
+    
