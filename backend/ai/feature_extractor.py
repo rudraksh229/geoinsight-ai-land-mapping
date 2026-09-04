@@ -1,13 +1,5 @@
 import ee
-
-# Initialize Earth Engine
-try:
-    ee.Initialize(project="geoinsight-ai-503616")
-except Exception:
-    ee.Authenticate()
-    ee.Initialize(project="geoinsight-ai-503616")
-
-
+from gee_config import init_gee
 def extract_features(latitude, longitude, radius):
 
     point = ee.Geometry.Point([longitude, latitude])
