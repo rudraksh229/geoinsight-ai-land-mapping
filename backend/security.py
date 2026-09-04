@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from jose import jwt, JWTError
@@ -40,7 +40,6 @@ def verify_password(
     plain_password: str,
     hashed_password: str
 ) -> bool:
-
     return pwd_context.verify(
         plain_password,
         hashed_password
@@ -55,15 +54,11 @@ def create_access_token(
     data: dict,
     expires_delta: Optional[timedelta] = None
 ):
-
     to_encode = data.copy()
 
     if expires_delta:
-
         expire = datetime.now(timezone.utc) + expires_delta
-
     else:
-
         expire = datetime.now(timezone.utc) + timedelta(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
         )
@@ -80,10 +75,10 @@ def create_access_token(
 
 
 # ==========================================
-# BEARER AUTHENTICATION
+# BEARER AUTHENTICATION (auto_error=False handles preflight)
 # ==========================================
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 # ==========================================
@@ -91,14 +86,23 @@ security = HTTPBearer()
 # ==========================================
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ):
+    # Preflight request bypass
+    if request.method == "OPTIONS":
+        return None
+
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided"
+        )
 
     token = credentials.credentials
 
     try:
-
         payload = jwt.decode(
             token,
             SECRET_KEY,
@@ -108,14 +112,12 @@ def get_current_user(
         email = payload.get("sub")
 
         if email is None:
-
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token"
             )
 
     except JWTError:
-
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
@@ -128,18 +130,15 @@ def get_current_user(
     )
 
     if user is None:
-
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
         )
 
     if not user.is_active:
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
 
     return user
-    

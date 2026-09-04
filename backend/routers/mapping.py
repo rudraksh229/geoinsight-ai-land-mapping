@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -6,7 +6,7 @@ import models
 import schemas
 
 from database import get_db
-# Absolute path fallback imports
+
 try:
     from backend.services.analysis_service import AnalysisService
     from backend.services.landcover_service import classify_landcover
@@ -21,45 +21,55 @@ router = APIRouter(
     tags=["Land Mapping"]
 )
 
+# Preflight Route for explicit CORS support
+@router.options("/analyze")
+async def analyze_options():
+    return {}
+
 @router.post("/analyze")
 def analyze_land(
-    request: schemas.MappingRequest,
+    request_data: schemas.MappingRequest,
+    req: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    # Safe guard for preflight checks
+    if req.method == "OPTIONS":
+        return {}
+
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token missing or invalid."
+        )
+
     try:
-        # ==========================================
         # 1. AI ANALYSIS
-        # ==========================================
         analysis_result = AnalysisService.analyze(
-            latitude=request.lat,
-            longitude=request.lng,
+            latitude=request_data.lat,
+            longitude=request_data.lng,
             radius=500
         )
 
-        # ==========================================
         # 2. SPATIAL LAND COVER MAP
-        # ==========================================
         landcover_result = classify_landcover(
-            latitude=request.lat,
-            longitude=request.lng,
+            latitude=request_data.lat,
+            longitude=request_data.lng,
             radius=500
         )
 
         # Parse Date Safely
         try:
-            parsed_date = datetime.strptime(request.date, "%Y-%m-%d")
-        except ValueError:
+            parsed_date = datetime.strptime(request_data.date, "%Y-%m-%d")
+        except (ValueError, TypeError):
             parsed_date = datetime.utcnow()
 
-        # ==========================================
-        # 3. DATABASE ANALYSIS
-        # ==========================================
+        # 3. DATABASE RECORD CREATION
         analysis = models.Analysis(
             user_id=current_user.id,
-            village=request.village,
-            district=request.district,
-            state=request.state,
+            village=request_data.village,
+            district=request_data.district,
+            state=request_data.state,
             date=parsed_date,
             total_area=analysis_result.get("stats", {}).get("totalArea", 0),
             mapped_area=analysis_result.get("stats", {}).get("mappedArea", 0),
@@ -72,26 +82,22 @@ def analyze_land(
             status=str(analysis_result.get("prediction", {}).get("class_id", "0"))
         )
 
-        # ==========================================
         # 4. SAVE TO DATABASE
-        # ==========================================
         db.add(analysis)
         db.commit()
         db.refresh(analysis)
 
-        # ==========================================
-        # 5. RESPONSE
-        # ==========================================
+        # 5. FINAL RESPONSE
         return {
             "success": True,
             "reportId": analysis.id,
             "prediction": analysis_result.get("prediction", {}),
             "location": {
-                "state": request.state,
-                "district": request.district,
-                "village": request.village,
-                "latitude": request.lat,
-                "longitude": request.lng
+                "state": request_data.state,
+                "district": request_data.district,
+                "village": request_data.village,
+                "latitude": request_data.lat,
+                "longitude": request_data.lng
             },
             "stats": analysis_result.get("stats", {}),
             "statistics": analysis_result.get("statistics", {}),
@@ -109,9 +115,9 @@ def analyze_land(
 
     except Exception as e:
         print(f"Error in /mapping/analyze endpoint: {str(e)}")
-        # Database Rollback if transaction failed
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Land Analysis Error: {str(e)}"
         )
+        
