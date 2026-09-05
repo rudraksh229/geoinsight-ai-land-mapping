@@ -19,7 +19,7 @@ class ReportService:
             return fallback
 
     @staticmethod
-    def _to_dict(obj):
+    def _format_data(obj):
         if not obj:
             return None
 
@@ -35,14 +35,13 @@ class ReportService:
         barren = ReportService._safe_float(getattr(obj, "barren", None), 0.0)
         conf = ReportService._safe_float(getattr(obj, "confidence", None), 97.93)
 
-        # Handle Date parsing safely without crashing Postgres
         raw_date = getattr(obj, "date", None) or getattr(obj, "created_at", None)
         if isinstance(raw_date, datetime):
-            formatted_date = raw_date.strftime("%Y-%m-%d")
+            date_str = raw_date.strftime("%Y-%m-%d")
         elif raw_date:
-            formatted_date = str(raw_date).split("T")[0]
+            date_str = str(raw_date).split("T")[0]
         else:
-            formatted_date = datetime.utcnow().strftime("%Y-%m-%d")
+            date_str = datetime.utcnow().strftime("%Y-%m-%d")
 
         return {
             "id": obj.id,
@@ -51,9 +50,21 @@ class ReportService:
             "village": getattr(obj, "village", "Amer") or "Amer",
             "district": getattr(obj, "district", "JPR") or "JPR",
             "state": getattr(obj, "state", "RJ") or "RJ",
-            "date": formatted_date,
-            "analysisDate": formatted_date,
+            "date": date_str,
+            "analysisDate": date_str,
             "status": "Completed",
+            
+            # Numeric fields (for Dashboard graphs/charts)
+            "total_area": total,
+            "mapped_area": mapped,
+            "vegetation_num": veg,
+            "agriculture_num": agri,
+            "water_num": water,
+            "builtup_num": built,
+            "barren_num": barren,
+            "confidence": conf,
+
+            # Formatted String fields (for PDF and Tables)
             "totalArea": f"{total:.2f} Ha",
             "mappedArea": f"{mapped:.2f} Ha",
             "vegetation": f"{veg:.2f} Ha",
@@ -62,7 +73,7 @@ class ReportService:
             "builtUpUrban": f"{built:.2f} Ha",
             "barrenLand": f"{barren:.2f} Ha",
             "aiConfidence": f"{conf:.2f}%",
-            "confidence": conf,
+
             "stats": {
                 "totalArea": total,
                 "mappedArea": mapped,
@@ -77,14 +88,13 @@ class ReportService:
 
     @staticmethod
     def get_all_reports(db: Session, user_id: int):
-        # Fetch user analyses or fallback safely to prevent empty list dashboard error
         reports = db.query(models.Analysis).order_by(models.Analysis.id.desc()).all()
-        return [ReportService._to_dict(r) for r in reports]
+        return [ReportService._format_data(r) for r in reports]
 
     @staticmethod
     def get_report(report_id: int, db: Session, user_id: int):
         report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
-        return ReportService._to_dict(report)
+        return ReportService._format_data(report)
 
     @staticmethod
     def create_report(analysis_payload, db: Session, user_id: int):
@@ -122,7 +132,7 @@ class ReportService:
         db.commit()
         db.refresh(db_analysis)
 
-        return ReportService._to_dict(db_analysis)
+        return ReportService._format_data(db_analysis)
 
     @staticmethod
     def delete_report(report_id: int, db: Session, user_id: int):

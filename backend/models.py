@@ -4,7 +4,7 @@ from datetime import datetime
 
 
 # =========================================================
-# LAND ANALYSIS
+# LAND ANALYSIS MODEL
 # =========================================================
 
 class Analysis(Base):
@@ -23,13 +23,12 @@ class Analysis(Base):
     district = Column(String, nullable=True, default="JPR")
     state = Column(String, nullable=True, default="RJ")
 
-    # Kept as DateTime to avoid Postgres 500 Internal Server Error
     date = Column(DateTime, default=datetime.utcnow)
 
     total_area = Column(Float, default=78.54)
     mapped_area = Column(Float, default=78.54)
 
-    # Floating point columns for Real Land Breakdown
+    # Land breakdown fields
     vegetation = Column(Float, default=0.0)
     agriculture = Column(Float, default=0.0)
     water = Column(Float, default=0.0)
@@ -42,7 +41,7 @@ class Analysis(Base):
 
 
 # =========================================================
-# REPORTS
+# REPORTS MODEL
 # =========================================================
 
 class Report(Base):
@@ -68,7 +67,7 @@ class Report(Base):
 
 
 # =========================================================
-# USERS
+# USERS MODEL
 # =========================================================
 
 class User(Base):
