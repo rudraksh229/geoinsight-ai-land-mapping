@@ -1,32 +1,39 @@
+import math
 from datetime import datetime
 from sqlalchemy.orm import Session
 import models
-import schemas
-
 
 class ReportService:
 
     @staticmethod
+    def _safe_float(value, default=0.0):
+        if value is None:
+            return default
+        try:
+            val = float(value)
+            if math.isnan(val) or math.isinf(val):
+                return default
+            return val
+        except (ValueError, TypeError):
+            return default
+
+    @staticmethod
     def _to_dict(report):
-        """Standardizes SQLAlchemy model attributes to match Frontend PDF & Table expectations"""
         if not report:
             return None
 
-        total = float(getattr(report, "total_area", 78.54) or 78.54)
+        # Direct Database Raw Values Extraction
+        total = ReportService._safe_float(getattr(report, "total_area", 0.0), 0.0)
+        mapped = ReportService._safe_float(getattr(report, "mapped_area", 0.0), total)
         
-        # Ensure mapped_area is never 0 if total area exists
-        mapped = float(getattr(report, "mapped_area", 0) or 0)
-        if mapped <= 0:
-            mapped = total
+        veg = ReportService._safe_float(getattr(report, "vegetation", 0.0), 0.0)
+        agri = ReportService._safe_float(getattr(report, "agriculture", 0.0), 0.0)
+        built = ReportService._safe_float(getattr(report, "builtup", 0.0), 0.0)
+        barren = ReportService._safe_float(getattr(report, "barren", 0.0), 0.0)
+        water = ReportService._safe_float(getattr(report, "water", 0.0), 0.0)
+        conf = ReportService._safe_float(getattr(report, "confidence", 0.0), 0.0)
 
-        veg = float(getattr(report, "vegetation", 0) or 0)
-        agri = float(getattr(report, "agriculture", 0) or 0)
-        built = float(getattr(report, "builtup", 0) or 0)
-        barren = float(getattr(report, "barren", 0) or 0)
-        water = float(getattr(report, "water", 0) or 0)
-        conf = float(getattr(report, "confidence", 95.0) or 95.0)
-
-        # Handle Date Parsing safely
+        # Date formatting
         raw_date = getattr(report, "date", None) or getattr(report, "created_at", None)
         if isinstance(raw_date, datetime):
             formatted_date = raw_date.strftime("%Y-%m-%d")
@@ -35,17 +42,16 @@ class ReportService:
         else:
             formatted_date = datetime.now().strftime("%Y-%m-%d")
 
-        # Status integer to string safety
-        raw_status = getattr(report, "status", "Completed")
-        status_str = "Completed" if str(raw_status) in ["1", "2", "3", "Completed"] else str(raw_status)
+        raw_status = getattr(report, "status", None)
+        status_str = "Completed" if not raw_status or str(raw_status).strip() in ["None", "null", ""] else str(raw_status)
 
         return {
             "id": report.id,
             "reportId": f"#{report.id}",
-            "user_id": report.user_id,
-            "village": getattr(report, "village", "Sehore") or "Sehore",
-            "district": getattr(report, "district", "BPL") or "BPL",
-            "state": getattr(report, "state", "MP") or "MP",
+            "user_id": getattr(report, "user_id", 1),
+            "village": getattr(report, "village", "-") or "-",
+            "district": getattr(report, "district", "-") or "-",
+            "state": getattr(report, "state", "-") or "-",
             "date": formatted_date,
             "analysisDate": formatted_date,
             "status": status_str,
@@ -64,54 +70,47 @@ class ReportService:
 
     @staticmethod
     def get_all_reports(db: Session, user_id: int):
-        reports = (
-            db.query(models.Analysis)
-            .filter(models.Analysis.user_id == user_id)
-            .order_by(models.Analysis.id.desc())
-            .all()
-        )
+        reports = db.query(models.Analysis).filter(models.Analysis.user_id == user_id).order_by(models.Analysis.id.desc()).all()
         if not reports:
             reports = db.query(models.Analysis).order_by(models.Analysis.id.desc()).all()
-
         return [ReportService._to_dict(r) for r in reports]
 
     @staticmethod
     def get_report(report_id: int, db: Session, user_id: int):
-        report = (
-            db.query(models.Analysis)
-            .filter(
-                models.Analysis.id == report_id,
-                models.Analysis.user_id == user_id
-            )
-            .first()
-        )
-        if not report:
-            report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
-
+        report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
         return ReportService._to_dict(report)
 
     @staticmethod
     def create_report(analysis, db: Session, user_id: int):
-        # Extract dictionary payload
         data = analysis.dict() if hasattr(analysis, "dict") else analysis
 
-        total = data.get("total_area", 78.54) or 78.54
-        mapped = data.get("mapped_area") or total
+        # Extract Original Calculated Values From Request Payload Flexibly
+        land_cover = data.get("landCover") or data.get("land_cover") or {}
+        
+        total = ReportService._safe_float(data.get("total_area") or data.get("totalArea"), 0.0)
+        mapped = ReportService._safe_float(data.get("mapped_area") or data.get("mappedArea"), total)
+
+        veg = ReportService._safe_float(data.get("vegetation") or land_cover.get("vegetation"), 0.0)
+        agri = ReportService._safe_float(data.get("agriculture") or land_cover.get("agriculture"), 0.0)
+        water = ReportService._safe_float(data.get("water") or land_cover.get("water"), 0.0)
+        built = ReportService._safe_float(data.get("builtup") or data.get("built_up") or land_cover.get("builtup"), 0.0)
+        barren = ReportService._safe_float(data.get("barren") or land_cover.get("barren"), 0.0)
+        conf = ReportService._safe_float(data.get("confidence") or data.get("aiConfidence"), 0.0)
 
         db_analysis = models.Analysis(
             user_id=user_id,
-            village=data.get("village", "Sehore"),
-            district=data.get("district", "BPL"),
-            state=data.get("state", "MP"),
+            village=data.get("village"),
+            district=data.get("district"),
+            state=data.get("state"),
             date=data.get("date", datetime.now().strftime("%Y-%m-%d")),
             total_area=total,
             mapped_area=mapped,
-            vegetation=data.get("vegetation", round(total * 0.20, 2)),
-            agriculture=data.get("agriculture", round(total * 0.44, 2)),
-            water=data.get("water", round(total * 0.05, 2)),
-            builtup=data.get("builtup", round(total * 0.02, 2)),
-            barren=data.get("barren", round(total * 0.29, 2)),
-            confidence=data.get("confidence", 95.0),
+            vegetation=veg,
+            agriculture=agri,
+            water=water,
+            builtup=built,
+            barren=barren,
+            confidence=conf,
             status="Completed"
         )
 
@@ -123,17 +122,8 @@ class ReportService:
 
     @staticmethod
     def delete_report(report_id: int, db: Session, user_id: int):
-        report = (
-            db.query(models.Analysis)
-            .filter(
-                models.Analysis.id == report_id,
-                models.Analysis.user_id == user_id
-            )
-            .first()
-        )
-
+        report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
         if report:
             db.delete(report)
             db.commit()
-
         return report
