@@ -1,5 +1,6 @@
 import ee
 import math
+
 try:
     from backend.gee_config import init_gee
 except ModuleNotFoundError:
@@ -39,11 +40,8 @@ def classify_landcover(latitude: float, longitude: float, radius: int = 500):
             .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
         )
 
-        # Check collection size safely
-        if collection.size().getInfo() == 0:
-            print("No Sentinel-2 images found. Returning fallback metrics.")
-            return get_fallback_landcover(latitude, longitude, radius)
-
+        # Blocking .size().getInfo() call avoided.
+        # Direct composite calculation using median()
         image = collection.median().clip(region)
 
         # SPECTRAL INDICES
@@ -69,7 +67,7 @@ def classify_landcover(latitude: float, longitude: float, radius: int = 500):
             .clip(region)
         )
 
-        # Fast Reduce Region Calculation instead of reduceToVectors
+        # Fast Reduce Region Calculation
         area_image = ee.Image.pixelArea().addBands(classified)
         
         stats = area_image.reduceRegion(
@@ -78,7 +76,7 @@ def classify_landcover(latitude: float, longitude: float, radius: int = 500):
                 groupName="class_id"
             ),
             geometry=region,
-            scale=30,  # Optimized scale to prevent CPU/RAM memory exhaustion
+            scale=50,  # Increased to 50m scale to run calculation in <500ms
             maxPixels=1e8,
             bestEffort=True
         ).getInfo()
@@ -99,11 +97,14 @@ def classify_landcover(latitude: float, longitude: float, radius: int = 500):
             5: "water"
         }
 
-        for group in stats.get("groups", []):
-            cid = int(group.get("class_id", 0))
-            sum_m2 = float(group.get("sum", 0))
-            if cid in class_mapping:
-                area_totals[class_mapping[cid]] = round(sum_m2 / 10000, 2)
+        if stats and "groups" in stats:
+            for group in stats.get("groups", []):
+                cid = int(group.get("class_id", 0))
+                sum_m2 = float(group.get("sum", 0))
+                if cid in class_mapping:
+                    area_totals[class_mapping[cid]] = round(sum_m2 / 10000, 2)
+        else:
+            return get_fallback_landcover(latitude, longitude, radius)
 
         total_area = round(math_pi_area(radius), 2)
 
@@ -119,7 +120,7 @@ def classify_landcover(latitude: float, longitude: float, radius: int = 500):
             "total_area_ha": total_area,
             "mapData": {
                 "type": "FeatureCollection",
-                "features": [] # GeoJSON vectors optimized to lightweight empty payload
+                "features": []
             }
         }
 
