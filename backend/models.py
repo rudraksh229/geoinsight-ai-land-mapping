@@ -15,7 +15,7 @@ class Analysis(Base):
     user_id = Column(
         Integer,
         ForeignKey("users.id"),
-        nullable=True,  # Set to True so background guest saves don't fail
+        nullable=True,
         index=True
     )
 
@@ -23,13 +23,13 @@ class Analysis(Base):
     district = Column(String, nullable=True, default="JPR")
     state = Column(String, nullable=True, default="RJ")
 
-    # Fixed: Standardized to handle both String and DateTime gracefully
-    date = Column(String, nullable=True, default=lambda: datetime.utcnow().strftime("%Y-%m-%d"))
+    # Kept as DateTime to avoid Postgres 500 Internal Server Error
+    date = Column(DateTime, default=datetime.utcnow)
 
     total_area = Column(Float, default=78.54)
     mapped_area = Column(Float, default=78.54)
 
-    # Land breakdown fields with exact defaults
+    # Floating point columns for Real Land Breakdown
     vegetation = Column(Float, default=0.0)
     agriculture = Column(Float, default=0.0)
     water = Column(Float, default=0.0)
