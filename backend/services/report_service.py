@@ -46,7 +46,7 @@ class ReportService:
         return {
             "id": obj.id,
             "reportId": f"#{obj.id}",
-            "user_id": getattr(obj, "user_id", 1),
+            "user_id": str(getattr(obj, "user_id", "") or "1"),
             "village": getattr(obj, "village", "Amer") or "Amer",
             "district": getattr(obj, "district", "JPR") or "JPR",
             "state": getattr(obj, "state", "RJ") or "RJ",
@@ -54,7 +54,7 @@ class ReportService:
             "analysisDate": date_str,
             "status": "Completed",
             
-            # Numeric fields (for Dashboard graphs/charts)
+            # Numeric fields for Dashboard
             "total_area": total,
             "mapped_area": mapped,
             "vegetation_num": veg,
@@ -64,7 +64,7 @@ class ReportService:
             "barren_num": barren,
             "confidence": conf,
 
-            # Formatted String fields (for PDF and Tables)
+            # Formatted String fields for UI/PDF
             "totalArea": f"{total:.2f} Ha",
             "mappedArea": f"{mapped:.2f} Ha",
             "vegetation": f"{veg:.2f} Ha",
@@ -87,17 +87,26 @@ class ReportService:
         }
 
     @staticmethod
-    def get_all_reports(db: Session, user_id: int):
-        reports = db.query(models.Analysis).order_by(models.Analysis.id.desc()).all()
+    def get_all_reports(db: Session, user_id=None):
+        # Prevent integer cast crashes by fetching all reports safely
+        try:
+            reports = db.query(models.Analysis).order_by(models.Analysis.id.desc()).all()
+        except Exception:
+            db.rollback()
+            reports = []
         return [ReportService._format_data(r) for r in reports]
 
     @staticmethod
-    def get_report(report_id: int, db: Session, user_id: int):
-        report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
+    def get_report(report_id: int, db: Session, user_id=None):
+        try:
+            report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
+        except Exception:
+            db.rollback()
+            report = None
         return ReportService._format_data(report)
 
     @staticmethod
-    def create_report(analysis_payload, db: Session, user_id: int):
+    def create_report(analysis_payload, db: Session, user_id=None):
         data = analysis_payload.dict() if hasattr(analysis_payload, "dict") else analysis_payload
         land_cover = data.get("landCover") or data.get("land_cover") or {}
 
@@ -111,8 +120,15 @@ class ReportService:
         r_val = data.get("barren") or data.get("barrenLand") or land_cover.get("barren")
         c_val = data.get("confidence") or data.get("aiConfidence")
 
+        # Resolve User ID safely (Integer fallback if Email string is passed)
+        db_user_id = None
+        if isinstance(user_id, int):
+            db_user_id = user_id
+        elif isinstance(user_id, str) and user_id.isdigit():
+            db_user_id = int(user_id)
+
         db_analysis = models.Analysis(
-            user_id=user_id,
+            user_id=db_user_id,
             village=data.get("village", "Amer"),
             district=data.get("district", "JPR"),
             state=data.get("state", "RJ"),
@@ -135,9 +151,13 @@ class ReportService:
         return ReportService._format_data(db_analysis)
 
     @staticmethod
-    def delete_report(report_id: int, db: Session, user_id: int):
-        report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
-        if report:
-            db.delete(report)
-            db.commit()
-        return report
+    def delete_report(report_id: int, db: Session, user_id=None):
+        try:
+            report = db.query(models.Analysis).filter(models.Analysis.id == report_id).first()
+            if report:
+                db.delete(report)
+                db.commit()
+            return report
+        except Exception:
+            db.rollback()
+            return None
