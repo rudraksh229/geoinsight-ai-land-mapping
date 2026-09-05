@@ -1,6 +1,7 @@
 import os
 
 import joblib
+import numpy as np
 from xgboost import XGBClassifier
 
 
@@ -60,7 +61,10 @@ def _get_model_and_encoder():
                 f"XGBoost model not found: {MODEL_PATH}"
             )
 
-        _model = XGBClassifier()
+        _model = XGBClassifier(
+            n_jobs=1,
+            verbosity=0,
+        )
 
         _model.load_model(
             MODEL_PATH
@@ -101,7 +105,7 @@ def predict_land(features):
     """
     Predict land-cover class using the trained XGBoost model.
 
-    Expected feature input:
+    Expected input:
 
         {
             "feature_vector": [...]
@@ -128,32 +132,53 @@ def predict_land(features):
         )
 
     # --------------------------------------------------------
-    # XGBoost prediction
+    # Prepare a small NumPy array
     # --------------------------------------------------------
 
-    raw_prediction = model.predict(
-        [feature_vector]
-    )[0]
-
     try:
-        encoded_prediction = int(
-            raw_prediction
-        )
-    except (TypeError, ValueError) as exc:
+        input_data = np.asarray(
+            feature_vector,
+            dtype=np.float32,
+        ).reshape(1, -1)
+
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
         raise ValueError(
-            f"Invalid model prediction: {raw_prediction}"
+            "Feature vector contains invalid values."
         ) from exc
 
     # --------------------------------------------------------
-    # Confidence
+    # Single prediction call
     # --------------------------------------------------------
 
-    probabilities = model.predict_proba(
-        [feature_vector]
-    )[0]
+    try:
+        probabilities = model.predict_proba(
+            input_data
+        )[0]
+
+    except Exception as exc:
+        raise RuntimeError(
+            "XGBoost prediction failed. "
+            f"Reason: {exc}"
+        ) from exc
+
+    if probabilities is None or len(probabilities) == 0:
+        raise RuntimeError(
+            "XGBoost returned empty prediction probabilities."
+        )
+
+    # --------------------------------------------------------
+    # Predicted class + confidence
+    # --------------------------------------------------------
+
+    encoded_prediction = int(
+        np.argmax(probabilities)
+    )
 
     confidence = float(
-        max(probabilities) * 100
+        np.max(probabilities) * 100
     )
 
     # --------------------------------------------------------
@@ -191,8 +216,15 @@ def predict_land(features):
             "Unknown",
         )
 
-    # Normalize common label formats.
-    normalized_name = class_name.strip().lower()
+    # --------------------------------------------------------
+    # Normalize label
+    # --------------------------------------------------------
+
+    normalized_name = (
+        class_name
+        .strip()
+        .lower()
+    )
 
     label_map = {
         "vegetation": "Vegetation",
@@ -210,6 +242,10 @@ def predict_land(features):
         normalized_name,
         class_name,
     )
+
+    # --------------------------------------------------------
+    # Final result
+    # --------------------------------------------------------
 
     return {
         "class_id": encoded_prediction,
