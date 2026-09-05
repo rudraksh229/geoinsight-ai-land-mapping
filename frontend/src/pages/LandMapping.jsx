@@ -164,13 +164,36 @@ const LandMapping = () => {
     showToast('Filters and spatial maps reset.', 'info');
   };
 
-  // DYNAMIC GEOJSON STYLING & POPUP BINDING
+  // DYNAMIC CLASS-BASED COLOR MAPPING LOGIC
+  const getLandCoverColor = (properties) => {
+    if (!properties) return '#94a3b8';
+
+    if (properties.color) return properties.color;
+
+    const type = (properties.type || properties.class || properties.label || '').toLowerCase();
+
+    if (type.includes('vegetation') || type.includes('forest') || type.includes('crop') || type.includes('green')) {
+      return '#2ecc71'; // Green
+    }
+    if (type.includes('barren') || type.includes('fallow') || type.includes('dry') || type.includes('wasteland')) {
+      return '#f39c12'; // Yellow/Amber
+    }
+    if (type.includes('built') || type.includes('urban') || type.includes('settlement') || type.includes('building')) {
+      return '#e74c3c'; // Red
+    }
+    if (type.includes('water') || type.includes('river') || type.includes('lake') || type.includes('pond')) {
+      return '#3498db'; // Blue
+    }
+
+    return '#16a34a';
+  };
+
   const geoJsonStyle = (feature) => {
-    const color = feature.properties?.color || '#2ecc71';
+    const fillColor = getLandCoverColor(feature?.properties);
     return {
-      fillColor: color,
-      color: color,
-      weight: 2,
+      fillColor: fillColor,
+      color: fillColor,
+      weight: 1.5,
       opacity: 0.9,
       fillOpacity: theme === 'dark' ? 0.65 : 0.5,
       dashArray: '3',
@@ -180,7 +203,7 @@ const LandMapping = () => {
   const onEachFeature = (feature, layer) => {
     if (feature.properties) {
       const label = feature.properties.label || 'Classification Area';
-      const classType = feature.properties.type || 'N/A';
+      const classType = feature.properties.type || feature.properties.class || 'N/A';
       const area = feature.properties.area || 'N/A';
 
       layer.bindPopup(`
