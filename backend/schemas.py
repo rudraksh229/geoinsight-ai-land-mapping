@@ -1,39 +1,56 @@
-from pydantic import BaseModel,EmailStr
-from datetime import date
+from datetime import date, datetime
+from typing import Optional
 
-# --------------------------
-# Database Schemas
-# --------------------------
+from pydantic import BaseModel, EmailStr, Field
+
+
+# ============================================================
+# ANALYSIS / REPORT SCHEMAS
+# ============================================================
 
 class AnalysisBase(BaseModel):
     village: str
     district: str
     state: str
-
     date: date
 
-    total_area: float
-    mapped_area: float
+    total_area: float = 0.0
+    mapped_area: float = 0.0
 
-    confidence: float
+    vegetation: float = 0.0
+    agriculture: float = 0.0
+    water: float = 0.0
+    builtup: float = 0.0
+    barren: float = 0.0
 
-    status: str
+    confidence: float = 0.0
+    status: str = "Completed"
 
 
 class AnalysisCreate(AnalysisBase):
-    pass
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius: Optional[float] = None
 
 
 class Analysis(AnalysisBase):
     id: int
 
+    user_id: Optional[int] = None
+
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius: Optional[float] = None
+
+    created_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
 
 
-# --------------------------
-# Earth Engine Request Schema
-# --------------------------
+# ============================================================
+# LAND MAPPING
+# ============================================================
 
 class AnalysisRequest(BaseModel):
     latitude: float
@@ -41,9 +58,19 @@ class AnalysisRequest(BaseModel):
     radius: int
 
 
-# --------------------------
-# Save Report Schema
-# --------------------------
+class MappingRequest(BaseModel):
+    state: str
+    district: str
+    village: str
+    date: str
+    lat: float
+    lng: float
+    radius: Optional[float] = 500
+
+
+# ============================================================
+# REPORT
+# ============================================================
 
 class SaveReportRequest(BaseModel):
     village: str
@@ -53,55 +80,169 @@ class SaveReportRequest(BaseModel):
     latitude: float
     longitude: float
     radius: int
+
+
+class ReportCreate(BaseModel):
+    latitude: float
+    longitude: float
+    radius: float
+
+    vegetation: float = 0.0
+    water: float = 0.0
+    builtup: float = 0.0
+    barren: float = 0.0
+
+    suitability_score: float = 0.0
+
+
+class ReportResponse(ReportCreate):
+    id: int
+    user_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# CHANGE DETECTION
+# ============================================================
+
 class ChangeRequest(BaseModel):
     latitude: float
     longitude: float
     radius: int
     start_date: str
     end_date: str
+
+
+# ============================================================
+# SUITABILITY
+# ============================================================
+
 class SuitabilityRequest(BaseModel):
     latitude: float
     longitude: float
     radius: int
+
+
+# ============================================================
+# TIME SERIES
+# ============================================================
+
 class TimeSeriesRequest(BaseModel):
     latitude: float
     longitude: float
     radius: int
-
     start_date: date
     end_date: date
-class MapTileRequest(BaseModel):
-    latitude: float
-    longitude: float
-    radius: int
-class ReverseGeocodeRequest(BaseModel):
-    latitude: float
-    longitude: float
-class ReportCreate(BaseModel):
+
+
+# ============================================================
+# VEGETATION
+# ============================================================
+
+class VegetationRequest(BaseModel):
     latitude: float
     longitude: float
     radius: float
 
-    vegetation: float
-    water: float
-    builtup: float
-    barren: float
-
-    suitability_score: float
+    start_date: date
+    end_date: date
 
 
-class ReportResponse(ReportCreate):
-    id: int
+# ============================================================
+# WATER
+# ============================================================
 
-    class Config:
-        from_attributes = True
+class WaterRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius: float
+
+
+# ============================================================
+# BUILT-UP
+# ============================================================
+
+class BuiltupRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius: float
+
+
+# ============================================================
+# BARREN LAND
+# ============================================================
+
+class BarrenRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius: int
+
+
+# ============================================================
+# LAND COVER
+# ============================================================
+
+class LandCoverRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius: int
+
+
+# ============================================================
+# MAP
+# ============================================================
+
+class MapTileRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius: int
+
+
+# ============================================================
+# GEOCODING
+# ============================================================
+
+class ReverseGeocodeRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+
+# ============================================================
+# COMPARE
+# ============================================================
+
+class Location(BaseModel):
+    latitude: float
+    longitude: float
+    radius: float
+
+
+class CompareRequest(BaseModel):
+    location1: Location
+    location2: Location
+
+
+# ============================================================
+# SATELLITE
+# ============================================================
+
+class SatelliteRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius: float
+
+
+# ============================================================
+# PDF REPORT
+# ============================================================
+
 class PDFRequest(BaseModel):
-    # Location Details
     village: str
     district: str
     state: str
-
-    # Analysis Information
     date: str
 
     latitude: float
@@ -114,17 +255,20 @@ class PDFRequest(BaseModel):
     builtup: float
     barren: float
 
-    # Satellite Statistics
     ndvi: float
     ndwi: float
     ndbi: float
 
-    # AI Prediction
     prediction: str
     confidence: float
 
-    # AI Recommendation
     recommendation: str
+
+
+# ============================================================
+# RECOMMENDATION
+# ============================================================
+
 class RecommendationRequest(BaseModel):
     vegetation_percent: float
     water_percent: float
@@ -138,33 +282,16 @@ class RecommendationResponse(BaseModel):
     recommendation: str
     priority: str
     confidence: float
-class SatelliteRequest(BaseModel):
-    latitude: float
-    longitude: float
-    radius: float
-from pydantic import BaseModel
-class MappingRequest(BaseModel):
-    state: str
-    district: str
-    village: str
-    date: str
-
-    lat: float
-    lng: float
-
-class Location(BaseModel):
-    latitude: float
-    longitude: float
-    radius: float
 
 
-class CompareRequest(BaseModel):
-    location1: Location
-    location2: Location
+# ============================================================
+# AUTHENTICATION
+# ============================================================
+
 class UserRegister(BaseModel):
     name: str
     email: EmailStr
-    password: str
+    password: str = Field(min_length=6)
 
 
 class UserLogin(BaseModel):

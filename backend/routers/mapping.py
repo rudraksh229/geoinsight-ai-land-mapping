@@ -1,174 +1,394 @@
-from datetime import datetime
-import random
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+import time
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 import models
 import schemas
+
 from database import get_db
+from security import get_current_user
 
-logger = logging.getLogger(__name__)
-
-# Safe Security Import
 try:
-    from backend.security import get_current_user
+    from backend.services.analysis_service import AnalysisService
 except ModuleNotFoundError:
-    try:
-        from security import get_current_user
-    except Exception:
-        get_current_user = lambda: {"id": 1, "username": "admin"}
+    from services.analysis_service import AnalysisService
+
 
 router = APIRouter(
     prefix="/mapping",
-    tags=["Land Mapping"]
+    tags=["Land Mapping"],
 )
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def get_user_id(current_user) -> int:
+    """
+    Safely extract the authenticated user's database ID.
+    """
+    if isinstance(current_user, dict):
+        user_id = current_user.get("id")
+    else:
+        user_id = getattr(current_user, "id", None)
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authenticated user information is missing.",
+        )
+
+    return int(user_id)
+
+
+def calculate_land_cover_from_prediction(
+    prediction: dict,
+    total_area: float,
+):
+    """
+    The XGBoost predictor currently predicts one land class
+    for the analyzed location.
+
+    Until pixel-level classification is connected, represent
+    the predicted class as the mapped land-cover category.
+    """
+
+    class_name = str(
+        prediction.get("class_name")
+        or prediction.get("label")
+        or "Unknown"
+    ).lower()
+
+    values = {
+        "vegetation": 0.0,
+        "agriculture": 0.0,
+        "barren": 0.0,
+        "water": 0.0,
+        "builtup": 0.0,
+    }
+
+    if "vegetation" in class_name:
+        values["vegetation"] = total_area
+
+    elif "agriculture" in class_name:
+        values["agriculture"] = total_area
+
+    elif "barren" in class_name:
+        values["barren"] = total_area
+
+    elif "water" in class_name:
+        values["water"] = total_area
+
+    elif "built" in class_name or "urban" in class_name:
+        values["builtup"] = total_area
+
+    return values
+
+
+# ============================================================
+# MAIN LAND MAPPING ENDPOINT
+# ============================================================
 
 @router.post("/analyze")
 def analyze_land(
     request_data: schemas.MappingRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
-    lat = request_data.lat
-    lng = request_data.lng
-    
-    # -------------------------------------------------------------
-    # HIGH-RESOLUTION PIXEL GRID (Photo 2 Matching Matrix Layout)
-    # -------------------------------------------------------------
-    rows, cols = 16, 20  # Detailed pixel grid matrix
-    offset_lat = 0.015
-    offset_lng = 0.020
-    
-    min_lat = lat - offset_lat
-    max_lat = lat + offset_lat
-    min_lng = lng - offset_lng
-    max_lng = lng + offset_lng
+    """
+    Run the actual GeoInsight AI land-analysis pipeline.
 
-    d_lat = (max_lat - min_lat) / rows
-    d_lng = (max_lng - min_lng) / cols
+    Flow:
 
-    class_pool = [
-        {"type": "agriculture", "color": "#f39c12", "label": "Crops, farms, cultivation", "weight": 45},
-        {"type": "vegetation", "color": "#2ecc71", "label": "Forests, canopy, green cover", "weight": 30},
-        {"type": "barren", "color": "#e67e22", "label": "Unused, dry, rocky terrains", "weight": 15},
-        {"type": "water", "color": "#3498db", "label": "Water bodies", "weight": 5},
-        {"type": "builtup", "color": "#e74c3c", "label": "Urban structures", "weight": 5}
-    ]
+        Frontend
+            ↓
+        /mapping/analyze
+            ↓
+        Google Earth Engine
+            ↓
+        Sentinel-2 features
+            ↓
+        XGBoost classifier
+            ↓
+        Database
+            ↓
+        Frontend response
+    """
 
-    features = []
-    total_area_ha = 78.54
-    tile_area = round(total_area_ha / (rows * cols), 4)
+    start_time = time.time()
 
-    counts = {"vegetation": 0, "agriculture": 0, "builtup": 0, "barren": 0, "water": 0}
+    user_id = get_user_id(current_user)
 
-    for r in range(rows):
-        for c in range(cols):
-            cell_min_lat = min_lat + (r * d_lat)
-            cell_max_lat = cell_min_lat + d_lat
-            cell_min_lng = min_lng + (c * d_lng)
-            cell_max_lng = cell_min_lng + d_lng
+    latitude = float(request_data.lat)
+    longitude = float(request_data.lng)
 
-            selected_class = random.choices(
-                class_pool, 
-                weights=[item["weight"] for item in class_pool], 
-                k=1
-            )[0]
+    radius = float(
+        request_data.radius
+        if request_data.radius is not None
+        else 500
+    )
 
-            counts[selected_class["type"]] += 1
+    if not (-90 <= latitude <= 90):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid latitude.",
+        )
 
-            polygon_feature = {
-                "type": "Feature",
-                "properties": {
-                    "type": selected_class["type"],
-                    "class": selected_class["type"],
-                    "label": selected_class["label"],
-                    "color": selected_class["color"],
-                    "area": f"{tile_area} Ha"
-                },
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[
-                        [cell_min_lng, cell_min_lat],
-                        [cell_max_lng, cell_min_lat],
-                        [cell_max_lng, cell_max_lat],
-                        [cell_min_lng, cell_max_lat],
-                        [cell_min_lng, cell_min_lat]
-                    ]]
-                }
-            }
-            features.append(polygon_feature)
+    if not (-180 <= longitude <= 180):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid longitude.",
+        )
 
-    # Calculated Hectares Based on Pixel Ratio
-    total_tiles = rows * cols
-    agri_ha = round((counts["agriculture"] / total_tiles) * total_area_ha, 2)
-    veg_ha = round((counts["vegetation"] / total_tiles) * total_area_ha, 2)
-    barren_ha = round((counts["barren"] / total_tiles) * total_area_ha, 2)
-    built_ha = round((counts["builtup"] / total_tiles) * total_area_ha, 2)
-    water_ha = round((counts["water"] / total_tiles) * total_area_ha, 2)
-    conf_val = 97.93
+    if radius <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Radius must be greater than zero.",
+        )
 
-    # User ID Resolution
-    user_id_val = current_user.get("id", 1) if isinstance(current_user, dict) else getattr(current_user, "id", 1)
-
-    # -------------------------------------------------------------
-    # DATABASE SAVE TRANSACTION
-    # -------------------------------------------------------------
-    report_id_str = f"REP-{random.randint(100000, 999999)}"
     try:
-        new_analysis = models.Analysis()
-        if hasattr(new_analysis, "user_id"): setattr(new_analysis, "user_id", user_id_val)
-        if hasattr(new_analysis, "state"): setattr(new_analysis, "state", request_data.state)
-        if hasattr(new_analysis, "district"): setattr(new_analysis, "district", request_data.district)
-        if hasattr(new_analysis, "village"): setattr(new_analysis, "village", request_data.village)
-        if hasattr(new_analysis, "latitude"): setattr(new_analysis, "latitude", lat)
-        if hasattr(new_analysis, "longitude"): setattr(new_analysis, "longitude", lng)
-        if hasattr(new_analysis, "total_area"): setattr(new_analysis, "total_area", total_area_ha)
-        if hasattr(new_analysis, "vegetation"): setattr(new_analysis, "vegetation", veg_ha)
-        if hasattr(new_analysis, "agriculture"): setattr(new_analysis, "agriculture", agri_ha)
-        if hasattr(new_analysis, "builtup"): setattr(new_analysis, "builtup", built_ha)
-        if hasattr(new_analysis, "barren"): setattr(new_analysis, "barren", barren_ha)
-        if hasattr(new_analysis, "water"): setattr(new_analysis, "water", water_ha)
-        if hasattr(new_analysis, "confidence"): setattr(new_analysis, "confidence", conf_val)
+        # ----------------------------------------------------
+        # 1. REAL GEE + XGBOOST ANALYSIS
+        # ----------------------------------------------------
+
+        result = AnalysisService.analyze(
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius,
+        )
+
+        prediction = result.get("prediction", {})
+
+        statistics = result.get(
+            "statistics",
+            {},
+        )
+
+        features = result.get(
+            "features",
+            {},
+        )
+
+        stats = result.get(
+            "stats",
+            {},
+        )
+
+        # ----------------------------------------------------
+        # 2. AREA
+        # ----------------------------------------------------
+
+        total_area = float(
+            stats.get(
+                "totalArea",
+                0.0,
+            )
+            or 0.0
+        )
+
+        mapped_area = float(
+            stats.get(
+                "mappedArea",
+                total_area,
+            )
+            or total_area
+        )
+
+        # ----------------------------------------------------
+        # 3. CONFIDENCE
+        # ----------------------------------------------------
+
+        confidence = float(
+            prediction.get(
+                "confidence",
+                stats.get(
+                    "confidence",
+                    0.0,
+                ),
+            )
+            or 0.0
+        )
+
+        # ----------------------------------------------------
+        # 4. LAND-COVER RESULT
+        # ----------------------------------------------------
+
+        land_cover = calculate_land_cover_from_prediction(
+            prediction,
+            mapped_area,
+        )
+
+        # ----------------------------------------------------
+        # 5. SAVE ANALYSIS TO DATABASE
+        # ----------------------------------------------------
+
+        new_analysis = models.Analysis(
+            user_id=user_id,
+
+            village=request_data.village,
+            district=request_data.district,
+            state=request_data.state,
+
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius,
+
+            date=datetime.utcnow(),
+
+            total_area=total_area,
+            mapped_area=mapped_area,
+
+            vegetation=land_cover["vegetation"],
+            agriculture=land_cover["agriculture"],
+            water=land_cover["water"],
+            builtup=land_cover["builtup"],
+            barren=land_cover["barren"],
+
+            confidence=confidence,
+
+            status="Completed",
+        )
 
         db.add(new_analysis)
         db.commit()
         db.refresh(new_analysis)
-        report_id_str = f"REP-{new_analysis.id}"
-        print(f"✅ DB RECORD SAVED SUCCESSFULLY - ID: {new_analysis.id}")
-    except Exception as db_err:
-        db.rollback()
-        print(f"❌ DB SAVE ERROR: {str(db_err)}")
 
-    return {
-        "success": True,
-        "reportId": report_id_str,
-        "prediction": {"confidence": 0.9793, "class_id": 1, "label": "Agricultural Land"},
-        "location": {
-            "state": request_data.state,
-            "district": request_data.district,
-            "village": request_data.village,
-            "latitude": lat,
-            "longitude": lng
-        },
-        "stats": {
-            "totalArea": total_area_ha, 
-            "mappedArea": total_area_ha,
-            "confidence": conf_val,
-            "predictionTime": "1.12s"
-        },
-        "statistics": {"NDVI": 0.68, "NDWI": -0.12},
-        "features": {},
-        "mapData": {
-            "type": "FeatureCollection", 
-            "features": features
-        },
-        "landCover": {
-            "vegetation": veg_ha,
-            "agriculture": agri_ha,
-            "builtup": built_ha,
-            "barren": barren_ha,
-            "water": water_ha
-        },
-        "message": "Satellite Imagery Analysis Completed Successfully"
-    }
+        report_id = f"REP-{new_analysis.id}"
+
+        elapsed_time = round(
+            time.time() - start_time,
+            2,
+        )
+
+        logger.info(
+            "Land analysis completed successfully. "
+            "user_id=%s analysis_id=%s",
+            user_id,
+            new_analysis.id,
+        )
+
+        # ----------------------------------------------------
+        # 6. FRONTEND RESPONSE
+        # ----------------------------------------------------
+
+        return {
+            "success": True,
+
+            "reportId": report_id,
+
+            "prediction": {
+                "class_id": prediction.get(
+                    "class_id"
+                ),
+
+                "label": prediction.get(
+                    "class_name",
+                    prediction.get(
+                        "label",
+                        "Unknown",
+                    ),
+                ),
+
+                "class_name": prediction.get(
+                    "class_name",
+                    prediction.get(
+                        "label",
+                        "Unknown",
+                    ),
+                ),
+
+                "confidence": round(
+                    confidence / 100,
+                    4,
+                )
+                if confidence > 1
+                else round(
+                    confidence,
+                    4,
+                ),
+            },
+
+            "location": {
+                "state": request_data.state,
+                "district": request_data.district,
+                "village": request_data.village,
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius": radius,
+            },
+
+            "stats": {
+                "totalArea": total_area,
+                "mappedArea": mapped_area,
+                "confidence": confidence,
+                "predictionTime": (
+                    f"{elapsed_time}s"
+                ),
+            },
+
+            "statistics": statistics,
+
+            "features": features,
+
+            # Keep existing frontend key.
+            "mapData": {
+                "type": "FeatureCollection",
+                "features": [],
+            },
+
+            "landCover": {
+                "vegetation": land_cover[
+                    "vegetation"
+                ],
+
+                "agriculture": land_cover[
+                    "agriculture"
+                ],
+
+                "builtup": land_cover[
+                    "builtup"
+                ],
+
+                "barren": land_cover[
+                    "barren"
+                ],
+
+                "water": land_cover[
+                    "water"
+                ],
+            },
+
+            "message": (
+                "Satellite Imagery Analysis "
+                "Completed Successfully"
+            ),
+
+            "created_at": (
+                new_analysis.created_at
+            ),
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        db.rollback()
+
+        logger.exception(
+            "Land mapping analysis failed: %s",
+            exc,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Land mapping analysis failed. "
+                f"Reason: {str(exc)}"
+            ),
+        )

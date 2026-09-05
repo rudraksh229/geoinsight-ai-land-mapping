@@ -1,121 +1,122 @@
+
+from copy import deepcopy
+
 from fastapi import APIRouter
+
 
 router = APIRouter(
     prefix="/geography",
-    tags=["Geography"]
+    tags=["Geography"],
 )
 
 
-# ==========================================
+# ============================================================
 # GEOGRAPHY DATA
-# ==========================================
+# ============================================================
 
 GEOGRAPHY_DATA = {
-
     "states": [
         {
             "code": "MH",
-            "name": "Maharashtra"
+            "name": "Maharashtra",
         },
         {
             "code": "UP",
-            "name": "Uttar Pradesh"
+            "name": "Uttar Pradesh",
         },
         {
             "code": "MP",
-            "name": "Madhya Pradesh"
+            "name": "Madhya Pradesh",
         },
         {
             "code": "RJ",
-            "name": "Rajasthan"
+            "name": "Rajasthan",
         },
         {
             "code": "GJ",
-            "name": "Gujarat"
-        }
+            "name": "Gujarat",
+        },
     ],
 
     "districts": {
-
         "MH": [
             {
                 "code": "PUNE",
-                "name": "Pune"
+                "name": "Pune",
             },
             {
                 "code": "MUMBAI",
-                "name": "Mumbai"
+                "name": "Mumbai",
             },
             {
                 "code": "NAGPUR",
-                "name": "Nagpur"
-            }
+                "name": "Nagpur",
+            },
         ],
 
         "UP": [
             {
                 "code": "GZB",
-                "name": "Ghaziabad"
+                "name": "Ghaziabad",
             },
             {
                 "code": "LKO",
-                "name": "Lucknow"
+                "name": "Lucknow",
             },
             {
                 "code": "AGRA",
-                "name": "Agra"
-            }
+                "name": "Agra",
+            },
         ],
 
         "MP": [
             {
                 "code": "IND",
-                "name": "Indore"
+                "name": "Indore",
             },
             {
                 "code": "BPL",
-                "name": "Bhopal"
-            }
+                "name": "Bhopal",
+            },
         ],
 
         "RJ": [
             {
                 "code": "JPR",
-                "name": "Jaipur"
+                "name": "Jaipur",
             },
             {
                 "code": "JOD",
-                "name": "Jodhpur"
-            }
+                "name": "Jodhpur",
+            },
         ],
 
         "GJ": [
             {
                 "code": "AMD",
-                "name": "Ahmedabad"
+                "name": "Ahmedabad",
             },
             {
                 "code": "SRT",
-                "name": "Surat"
-            }
-        ]
+                "name": "Surat",
+            },
+        ],
     },
 
     "villages": {
-
         "PUNE": [
             {
                 "code": "KHADAKWASLA",
                 "name": "Khadakwasla",
                 "lat": 18.5913,
-                "lng": 73.7386
+                "lng": 73.7386,
             },
             {
                 "code": "HINJEWADI",
                 "name": "Hinjewadi",
                 "lat": 18.5912,
-                "lng": 73.7380
-            }
+                "lng": 73.7380,
+            },
         ],
 
         "MUMBAI": [
@@ -123,8 +124,8 @@ GEOGRAPHY_DATA = {
                 "code": "BORIVALI",
                 "name": "Borivali",
                 "lat": 19.2300,
-                "lng": 72.8570
-            }
+                "lng": 72.8570,
+            },
         ],
 
         "NAGPUR": [
@@ -132,8 +133,8 @@ GEOGRAPHY_DATA = {
                 "code": "KORADI",
                 "name": "Koradi",
                 "lat": 21.2500,
-                "lng": 79.1000
-            }
+                "lng": 79.1000,
+            },
         ],
 
         "GZB": [
@@ -141,8 +142,8 @@ GEOGRAPHY_DATA = {
                 "code": "LOHIA",
                 "name": "Loni",
                 "lat": 28.7500,
-                "lng": 77.2900
-            }
+                "lng": 77.2900,
+            },
         ],
 
         "LKO": [
@@ -150,8 +151,8 @@ GEOGRAPHY_DATA = {
                 "code": "MALIHABAD",
                 "name": "Malihabad",
                 "lat": 26.9220,
-                "lng": 80.7100
-            }
+                "lng": 80.7100,
+            },
         ],
 
         "AGRA": [
@@ -159,8 +160,8 @@ GEOGRAPHY_DATA = {
                 "code": "FATEHPUR",
                 "name": "Fatehpur Sikri",
                 "lat": 27.0945,
-                "lng": 77.6600
-            }
+                "lng": 77.6600,
+            },
         ],
 
         "IND": [
@@ -168,8 +169,8 @@ GEOGRAPHY_DATA = {
                 "code": "MHOW",
                 "name": "Mhow",
                 "lat": 22.5500,
-                "lng": 75.7600
-            }
+                "lng": 75.7600,
+            },
         ],
 
         "BPL": [
@@ -177,8 +178,8 @@ GEOGRAPHY_DATA = {
                 "code": "SEHORE",
                 "name": "Sehore",
                 "lat": 23.2000,
-                "lng": 77.0800
-            }
+                "lng": 77.0800,
+            },
         ],
 
         "JPR": [
@@ -186,8 +187,8 @@ GEOGRAPHY_DATA = {
                 "code": "AMBER",
                 "name": "Amer",
                 "lat": 26.9855,
-                "lng": 75.8513
-            }
+                "lng": 75.8513,
+            },
         ],
 
         "JOD": [
@@ -195,8 +196,8 @@ GEOGRAPHY_DATA = {
                 "code": "MANDORE",
                 "name": "Mandore",
                 "lat": 26.3540,
-                "lng": 73.0480
-            }
+                "lng": 73.0480,
+            },
         ],
 
         "AMD": [
@@ -204,8 +205,8 @@ GEOGRAPHY_DATA = {
                 "code": "SANAND",
                 "name": "Sanand",
                 "lat": 22.9920,
-                "lng": 72.3810
-            }
+                "lng": 72.3810,
+            },
         ],
 
         "SRT": [
@@ -213,18 +214,22 @@ GEOGRAPHY_DATA = {
                 "code": "KAMREJ",
                 "name": "Kamrej",
                 "lat": 21.2700,
-                "lng": 72.9600
-            }
-        ]
-    }
+                "lng": 72.9600,
+            },
+        ],
+    },
 }
 
 
-# ==========================================
+# ============================================================
 # GET GEOGRAPHY METADATA
-# ==========================================
+# ============================================================
 
 @router.get("/metadata")
 def metadata():
+    """
+    Return state, district and village metadata
+    used by the frontend location selectors.
+    """
 
-    return GEOGRAPHY_DATA
+    return deepcopy(GEOGRAPHY_DATA)

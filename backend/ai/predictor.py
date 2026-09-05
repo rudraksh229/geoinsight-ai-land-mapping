@@ -1,65 +1,153 @@
 import os
 
-BASE_DIR = os.path.dirname(__file__)
+import joblib
+from xgboost import XGBClassifier
+
+
+# ============================================================
+# MODEL PATHS
+# ============================================================
+
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
 
 MODEL_PATH = os.path.join(
     BASE_DIR,
     "models",
-    "xgboost_land_classifier.json"
+    "xgboost_land_classifier.json",
 )
 
 ENCODER_PATH = os.path.join(
     BASE_DIR,
     "models",
-    "label_encoder.pkl"
+    "label_encoder.pkl",
 )
 
-# Global cached instances (Sirf pehli API request par populate honge)
+
+# ============================================================
+# MODEL CACHE
+# ============================================================
+
 _model = None
 _encoder = None
 
+
+# ============================================================
+# LAND-COVER CLASSES
+# ============================================================
+
 CLASS_NAMES = {
-    1: "Vegetation",
-    2: "Agriculture",
-    3: "Built-up",
-    4: "Barren",
-    5: "Water"
+    0: "Vegetation",
+    1: "Agriculture",
+    2: "Built-up",
+    3: "Barren",
+    4: "Water",
 }
 
 
+# ============================================================
+# LOAD MODEL
+# ============================================================
+
 def _get_model_and_encoder():
-    """Lazy loader: Serves cached model or loads on first call."""
-    global _model, _encoder
-    if _model is None or _encoder is None:
-        import joblib
-        from xgboost import XGBClassifier
+    global _model
+    global _encoder
+
+    if _model is None:
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(
+                f"XGBoost model not found: {MODEL_PATH}"
+            )
 
         _model = XGBClassifier()
-        _model.load_model(MODEL_PATH)
-        _encoder = joblib.load(ENCODER_PATH)
-        print("LABEL ENCODER CLASSES:", _encoder.classes_)
+
+        _model.load_model(
+            MODEL_PATH
+        )
+
+        print(
+            "XGBoost land-classification model loaded successfully."
+        )
+
+    if _encoder is None:
+        if not os.path.exists(ENCODER_PATH):
+            raise FileNotFoundError(
+                f"Label encoder not found: {ENCODER_PATH}"
+            )
+
+        _encoder = joblib.load(
+            ENCODER_PATH
+        )
+
+        print(
+            "Label encoder loaded successfully."
+        )
+
+        if hasattr(_encoder, "classes_"):
+            print(
+                "LABEL ENCODER CLASSES:",
+                list(_encoder.classes_)
+            )
 
     return _model, _encoder
 
 
+# ============================================================
+# PREDICTION
+# ============================================================
+
 def predict_land(features):
-    # Retrieve cached model on runtime
+    """
+    Predict land-cover class using the trained XGBoost model.
+
+    Expected feature input:
+
+        {
+            "feature_vector": [...]
+        }
+
+    Returns confidence on a 0-100 scale.
+    """
+
     model, encoder = _get_model_and_encoder()
 
-    feature_vector = features["feature_vector"]
+    feature_vector = features.get(
+        "feature_vector"
+    )
 
-    # -----------------------------
-    # Model prediction
-    # -----------------------------
-    prediction_encoded = model.predict(
+    if not feature_vector:
+        raise ValueError(
+            "Feature vector is empty."
+        )
+
+    if len(feature_vector) != 15:
+        raise ValueError(
+            "Invalid feature vector length. "
+            f"Expected 15 features, got {len(feature_vector)}."
+        )
+
+    # --------------------------------------------------------
+    # XGBoost prediction
+    # --------------------------------------------------------
+
+    raw_prediction = model.predict(
         [feature_vector]
     )[0]
 
-    prediction_encoded = int(prediction_encoded)
+    try:
+        encoded_prediction = int(
+            raw_prediction
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid model prediction: {raw_prediction}"
+        ) from exc
 
-    # -----------------------------
-    # Prediction probabilities
-    # -----------------------------
+    # --------------------------------------------------------
+    # Confidence
+    # --------------------------------------------------------
+
     probabilities = model.predict_proba(
         [feature_vector]
     )[0]
@@ -68,23 +156,70 @@ def predict_land(features):
         max(probabilities) * 100
     )
 
-    # -----------------------------
-    # IMPORTANT: XGBoost output is 0-based
-    # Convert to land class ID
-    # -----------------------------
-    class_id = prediction_encoded + 1
+    # --------------------------------------------------------
+    # Decode class
+    # --------------------------------------------------------
 
-    # -----------------------------
-    # Get readable class name
-    # -----------------------------
-    class_name = CLASS_NAMES.get(
-        class_id,
-        "Unknown"
+    class_name = None
+
+    if hasattr(
+        encoder,
+        "inverse_transform"
+    ):
+        try:
+            decoded = encoder.inverse_transform(
+                [encoded_prediction]
+            )
+
+            if len(decoded) > 0:
+                class_name = str(
+                    decoded[0]
+                )
+
+        except Exception as exc:
+            print(
+                f"Label encoder decoding warning: {exc}"
+            )
+
+    # --------------------------------------------------------
+    # Fallback class mapping
+    # --------------------------------------------------------
+
+    if not class_name:
+        class_name = CLASS_NAMES.get(
+            encoded_prediction,
+            "Unknown",
+        )
+
+    # Normalize common label formats.
+    normalized_name = class_name.strip().lower()
+
+    label_map = {
+        "vegetation": "Vegetation",
+        "vegetative": "Vegetation",
+        "agriculture": "Agriculture",
+        "agricultural": "Agriculture",
+        "built-up": "Built-up",
+        "builtup": "Built-up",
+        "urban": "Built-up",
+        "barren": "Barren",
+        "water": "Water",
+    }
+
+    final_class_name = label_map.get(
+        normalized_name,
+        class_name,
     )
 
     return {
-        "class_id": class_id,
-        "class_name": class_name,
-        "confidence": round(confidence, 2)
+        "class_id": encoded_prediction,
+
+        "class_name": final_class_name,
+
+        "label": final_class_name,
+
+        "confidence": round(
+            confidence,
+            2,
+        ),
     }
-    

@@ -1,43 +1,100 @@
-import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Environment variable check with fallback
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql://postgres:GeoInsight%40123@localhost:5432/geoinsight_ai"
+import os
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import (
+    sessionmaker,
+    declarative_base,
 )
 
-# Render Postgres Dialect Compatibility Guard
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Memory & Connection Pool Management for Render Free Tier (512MB RAM Limit)
+# ============================================================
+# DATABASE CONFIGURATION
+# ============================================================
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Please configure the Render PostgreSQL DATABASE_URL."
+    )
+
+
+# Render may provide the old postgres:// format.
+# SQLAlchemy expects postgresql://.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgres://",
+        "postgresql://",
+        1,
+    )
+
+
+# ============================================================
+# DATABASE ENGINE
+# ============================================================
+
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,      # Automatically reconnects dead/stale connections
-    pool_recycle=300,        # Recycles connections every 5 minutes to prevent idle drops
-    pool_size=5,             # Restricts max persistent connections
-    max_overflow=10,         # Allows burst queries up to 10 extra temporary connections
-    connect_args={"connect_timeout": 10} # Prevents hanging requests during database outages
+
+    # Detect stale/dead connections before using them.
+    pool_pre_ping=True,
+
+    # Recycle connections periodically.
+    pool_recycle=300,
+
+    # Keep the connection pool small for Render.
+    pool_size=3,
+
+    # Allow a small number of temporary connections
+    # during short traffic bursts.
+    max_overflow=2,
+
+    # Prevent requests from hanging indefinitely
+    # when PostgreSQL is unreachable.
+    connect_args={
+        "connect_timeout": 10,
+    },
 )
+
+
+# ============================================================
+# SESSION
+# ============================================================
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
+
+
+# ============================================================
+# BASE MODEL
+# ============================================================
 
 Base = declarative_base()
 
-# FastAPI Dependency for Clean Context Management
+
+# ============================================================
+# FASTAPI DATABASE DEPENDENCY
+# ============================================================
+
 def get_db():
     db = SessionLocal()
+
     try:
         yield db
-    except Exception as db_err:
+
+    except Exception as exc:
         db.rollback()
-        print(f"[Database Session Error]: {str(db_err)}")
+
+        print(
+            f"[Database Session Error] {exc}"
+        )
+
         raise
+
     finally:
         db.close()

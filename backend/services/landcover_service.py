@@ -1,148 +1,535 @@
 import ee
-import math
 
-try:
-    from backend.gee_config import init_gee
-except ModuleNotFoundError:
-    from gee_config import init_gee
+from gee_config import init_gee
 
 
-# ==========================================
-# CIRCLE AREA
-# ==========================================
+# ============================================================
+# LAND-COVER ANALYSIS
+# ============================================================
 
-def math_pi_area(radius):
-    return (
-        math.pi *
-        (radius ** 2) /
-        10000
-    )
+def classify_landcover(
+    latitude,
+    longitude,
+    radius,
+):
+    """
+    Classify the selected region into:
 
+        Vegetation
+        Agriculture
+        Water
+        Built-up
+        Barren
 
-# ==========================================
-# LAND COVER CLASSIFICATION
-# ==========================================
+    This service uses Sentinel-2 spectral indices.
 
-def classify_landcover(latitude: float, longitude: float, radius: int = 500):
+    NOTE:
+    The main AI endpoint (/mapping/analyze) uses the
+    trained XGBoost model. This endpoint remains a
+    separate threshold-based land-cover analysis.
+    """
+
+    latitude = float(latitude)
+    longitude = float(longitude)
+    radius = float(radius)
+
+    # --------------------------------------------------------
+    # Validate input
+    # --------------------------------------------------------
+
+    if not (-90 <= latitude <= 90):
+        raise ValueError(
+            "Invalid latitude."
+        )
+
+    if not (-180 <= longitude <= 180):
+        raise ValueError(
+            "Invalid longitude."
+        )
+
+    if radius <= 0:
+        raise ValueError(
+            "Radius must be greater than zero."
+        )
+
+    # --------------------------------------------------------
+    # Initialize Earth Engine
+    # --------------------------------------------------------
+
     init_gee()
 
-    try:
-        point = ee.Geometry.Point([longitude, latitude])
-        region = point.buffer(radius)
+    # --------------------------------------------------------
+    # Region
+    # --------------------------------------------------------
 
-        # ==========================================
-        # SENTINEL-2
-        # ==========================================
-        collection = (
-            ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-            .filterBounds(region)
-            .filterDate("2024-01-01", "2024-12-31")
-            .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
+    point = ee.Geometry.Point(
+        [
+            longitude,
+            latitude,
+        ]
+    )
+
+    region = point.buffer(
+        radius
+    )
+
+    # --------------------------------------------------------
+    # Sentinel-2 collection
+    # --------------------------------------------------------
+
+    collection = (
+        ee.ImageCollection(
+            "COPERNICUS/S2_SR_HARMONIZED"
+        )
+        .filterBounds(region)
+        .filterDate(
+            "2024-01-01",
+            "2025-01-01",
+        )
+        .filter(
+            ee.Filter.lt(
+                "CLOUDY_PIXEL_PERCENTAGE",
+                20,
+            )
+        )
+    )
+
+    # --------------------------------------------------------
+    # Check imagery
+    # --------------------------------------------------------
+
+    image_count = collection.size().getInfo()
+
+    if image_count == 0:
+        raise RuntimeError(
+            "No suitable Sentinel-2 imagery was found "
+            "for the selected location."
         )
 
-        # Blocking .size().getInfo() call avoided.
-        # Direct composite calculation using median()
-        image = collection.median().clip(region)
+    # --------------------------------------------------------
+    # Create median composite
+    # --------------------------------------------------------
 
-        # SPECTRAL INDICES
-        ndvi = image.normalizedDifference(["B8", "B4"]).rename("NDVI")
-        ndwi = image.normalizedDifference(["B3", "B8"]).rename("NDWI")
-        ndbi = image.normalizedDifference(["B11", "B8"]).rename("NDBI")
+    image = collection.median()
 
-        # LAND COVER MASKS
-        water_mask = ndwi.gt(0.2)
-        vegetation_mask = ndvi.gt(0.4).And(water_mask.Not())
-        builtup_mask = ndbi.gt(0.2).And(water_mask.Not()).And(vegetation_mask.Not())
-        agriculture_mask = ndvi.gte(0.2).And(ndvi.lte(0.4)).And(water_mask.Not()).And(builtup_mask.Not())
-        barren_mask = water_mask.Not().And(vegetation_mask.Not()).And(builtup_mask.Not()).And(agriculture_mask.Not())
+    # --------------------------------------------------------
+    # Spectral indices
+    # --------------------------------------------------------
 
-        classified = (
-            ee.Image(0)
-            .where(vegetation_mask, 1)
-            .where(agriculture_mask, 2)
-            .where(builtup_mask, 3)
-            .where(barren_mask, 4)
-            .where(water_mask, 5)
-            .rename("class_id")
-            .clip(region)
+    ndvi = (
+        image
+        .normalizedDifference(
+            [
+                "B8",
+                "B4",
+            ]
         )
+        .rename("NDVI")
+    )
 
-        # Fast Reduce Region Calculation
-        area_image = ee.Image.pixelArea().addBands(classified)
-        
-        stats = area_image.reduceRegion(
-            reducer=ee.Reducer.sum().group(
-                groupField=1,
-                groupName="class_id"
-            ),
+    ndwi = (
+        image
+        .normalizedDifference(
+            [
+                "B3",
+                "B8",
+            ]
+        )
+        .rename("NDWI")
+    )
+
+    ndbi = (
+        image
+        .normalizedDifference(
+            [
+                "B11",
+                "B8",
+            ]
+        )
+        .rename("NDBI")
+    )
+
+    # --------------------------------------------------------
+    # Add indices together
+    # --------------------------------------------------------
+
+    index_image = ee.Image.cat(
+        [
+            ndvi,
+            ndwi,
+            ndbi,
+        ]
+    )
+
+    # --------------------------------------------------------
+    # Calculate mean indices
+    # --------------------------------------------------------
+
+    mean_values = (
+        index_image
+        .reduceRegion(
+            reducer=ee.Reducer.mean(),
             geometry=region,
-            scale=50,  # Increased to 50m scale to run calculation in <500ms
+            scale=10,
             maxPixels=1e8,
-            bestEffort=True
-        ).getInfo()
+            bestEffort=True,
+        )
+        .getInfo()
+    )
 
-        area_totals = {
-            "vegetation": 0.0,
-            "agriculture": 0.0,
-            "builtup": 0.0,
-            "barren": 0.0,
-            "water": 0.0
-        }
+    if not mean_values:
+        raise RuntimeError(
+            "Google Earth Engine returned empty "
+            "land-cover statistics."
+        )
 
-        class_mapping = {
-            1: "vegetation",
-            2: "agriculture",
-            3: "builtup",
-            4: "barren",
-            5: "water"
-        }
+    average_ndvi = float(
+        mean_values.get(
+            "NDVI",
+            0.0,
+        )
+        or 0.0
+    )
 
-        if stats and "groups" in stats:
-            for group in stats.get("groups", []):
-                cid = int(group.get("class_id", 0))
-                sum_m2 = float(group.get("sum", 0))
-                if cid in class_mapping:
-                    area_totals[class_mapping[cid]] = round(sum_m2 / 10000, 2)
-        else:
-            return get_fallback_landcover(latitude, longitude, radius)
+    average_ndwi = float(
+        mean_values.get(
+            "NDWI",
+            0.0,
+        )
+        or 0.0
+    )
 
-        total_area = round(math_pi_area(radius), 2)
+    average_ndbi = float(
+        mean_values.get(
+            "NDBI",
+            0.0,
+        )
+        or 0.0
+    )
 
-        return {
+    # --------------------------------------------------------
+    # Pixel-area image
+    # --------------------------------------------------------
+
+    pixel_area = ee.Image.pixelArea()
+
+    # --------------------------------------------------------
+    # Masks
+    # --------------------------------------------------------
+
+    water_mask = ndwi.gt(0.2)
+
+    vegetation_mask = (
+        ndvi.gt(0.4)
+        .And(
+            ndwi.lte(0.2)
+        )
+    )
+
+    builtup_mask = (
+        ndbi.gt(0.2)
+        .And(
+            ndvi.lt(0.4)
+        )
+        .And(
+            ndwi.lte(0.2)
+        )
+    )
+
+    # Barren = low vegetation + low water + low built-up
+    barren_mask = (
+        ndvi.lte(0.4)
+        .And(
+            ndwi.lte(0.2)
+        )
+        .And(
+            ndbi.lte(0.2)
+        )
+    )
+
+    # --------------------------------------------------------
+    # Calculate areas in one reduceRegion call
+    # --------------------------------------------------------
+
+    area_image = ee.Image.cat(
+        [
+            pixel_area
+            .updateMask(
+                vegetation_mask
+            )
+            .rename("vegetation"),
+
+            pixel_area
+            .updateMask(
+                water_mask
+            )
+            .rename("water"),
+
+            pixel_area
+            .updateMask(
+                builtup_mask
+            )
+            .rename("builtup"),
+
+            pixel_area
+            .updateMask(
+                barren_mask
+            )
+            .rename("barren"),
+        ]
+    )
+
+    area_values = (
+        area_image
+        .reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=region,
+            scale=10,
+            maxPixels=1e8,
+            bestEffort=True,
+        )
+        .getInfo()
+    )
+
+    if not area_values:
+        raise RuntimeError(
+            "Google Earth Engine returned empty "
+            "land-cover area statistics."
+        )
+
+    # --------------------------------------------------------
+    # Convert m² → hectares
+    # --------------------------------------------------------
+
+    vegetation_ha = (
+        float(
+            area_values.get(
+                "vegetation",
+                0.0,
+            )
+            or 0.0
+        )
+        / 10000
+    )
+
+    water_ha = (
+        float(
+            area_values.get(
+                "water",
+                0.0,
+            )
+            or 0.0
+        )
+        / 10000
+    )
+
+    builtup_ha = (
+        float(
+            area_values.get(
+                "builtup",
+                0.0,
+            )
+            or 0.0
+        )
+        / 10000
+    )
+
+    barren_ha = (
+        float(
+            area_values.get(
+                "barren",
+                0.0,
+            )
+            or 0.0
+        )
+        / 10000
+    )
+
+    # --------------------------------------------------------
+    # Total area
+    # --------------------------------------------------------
+
+    total_area_ha = (
+        math_pi()
+        * (radius ** 2)
+        / 10000
+    )
+
+    total_area_ha = float(
+        total_area_ha
+    )
+
+    # --------------------------------------------------------
+    # Agriculture
+    # --------------------------------------------------------
+    #
+    # Agriculture is estimated as vegetation that is not
+    # already represented by water/built-up/barren masks.
+    #
+    # This is a threshold-based estimate, not the XGBoost
+    # model used by /mapping/analyze.
+    # --------------------------------------------------------
+
+    classified_area = (
+        vegetation_ha
+        + water_ha
+        + builtup_ha
+        + barren_ha
+    )
+
+    agriculture_ha = max(
+        0.0,
+        total_area_ha
+        - classified_area,
+    )
+
+    # --------------------------------------------------------
+    # Round values
+    # --------------------------------------------------------
+
+    total_area_ha = round(
+        total_area_ha,
+        2,
+    )
+
+    vegetation_ha = round(
+        vegetation_ha,
+        2,
+    )
+
+    agriculture_ha = round(
+        agriculture_ha,
+        2,
+    )
+
+    water_ha = round(
+        water_ha,
+        2,
+    )
+
+    builtup_ha = round(
+        builtup_ha,
+        2,
+    )
+
+    barren_ha = round(
+        barren_ha,
+        2,
+    )
+
+    # --------------------------------------------------------
+    # Percentages
+    # --------------------------------------------------------
+
+    if total_area_ha > 0:
+        vegetation_percent = round(
+            vegetation_ha
+            / total_area_ha
+            * 100,
+            2,
+        )
+
+        agriculture_percent = round(
+            agriculture_ha
+            / total_area_ha
+            * 100,
+            2,
+        )
+
+        water_percent = round(
+            water_ha
+            / total_area_ha
+            * 100,
+            2,
+        )
+
+        builtup_percent = round(
+            builtup_ha
+            / total_area_ha
+            * 100,
+            2,
+        )
+
+        barren_percent = round(
+            barren_ha
+            / total_area_ha
+            * 100,
+            2,
+        )
+
+    else:
+        vegetation_percent = 0.0
+        agriculture_percent = 0.0
+        water_percent = 0.0
+        builtup_percent = 0.0
+        barren_percent = 0.0
+
+    # --------------------------------------------------------
+    # Final result
+    # --------------------------------------------------------
+
+    return {
+        "success": True,
+
+        "location": {
             "latitude": latitude,
             "longitude": longitude,
-            "radius_meters": radius,
-            "vegetation_ha": area_totals["vegetation"],
-            "agriculture_ha": area_totals["agriculture"],
-            "water_ha": area_totals["water"],
-            "builtup_ha": area_totals["builtup"],
-            "barren_ha": area_totals["barren"],
-            "total_area_ha": total_area,
-            "mapData": {
-                "type": "FeatureCollection",
-                "features": []
-            }
-        }
+            "radius": radius,
+        },
 
-    except Exception as e:
-        print(f"Error executing landcover service: {str(e)}")
-        return get_fallback_landcover(latitude, longitude, radius)
+        "total_area_ha": total_area_ha,
 
+        "land_cover": {
+            "vegetation": vegetation_ha,
+            "agriculture": agriculture_ha,
+            "water": water_ha,
+            "builtup": builtup_ha,
+            "barren": barren_ha,
+        },
 
-def get_fallback_landcover(latitude, longitude, radius):
-    total_area = round(math_pi_area(radius), 2)
-    return {
-        "latitude": latitude,
-        "longitude": longitude,
-        "radius_meters": radius,
-        "vegetation_ha": round(total_area * 0.3, 2),
-        "agriculture_ha": round(total_area * 0.4, 2),
-        "water_ha": round(total_area * 0.05, 2),
-        "builtup_ha": round(total_area * 0.1, 2),
-        "barren_ha": round(total_area * 0.15, 2),
-        "total_area_ha": total_area,
-        "mapData": {
-            "type": "FeatureCollection",
-            "features": []
-        }
+        "percentages": {
+            "vegetation": vegetation_percent,
+            "agriculture": agriculture_percent,
+            "water": water_percent,
+            "builtup": builtup_percent,
+            "barren": barren_percent,
+        },
+
+        "indices": {
+            "NDVI": round(
+                average_ndvi,
+                4,
+            ),
+
+            "NDWI": round(
+                average_ndwi,
+                4,
+            ),
+
+            "NDBI": round(
+                average_ndbi,
+                4,
+            ),
+        },
+
+        "image_count": image_count,
+
+        "message": (
+            "Land-cover analysis completed "
+            "successfully."
+        ),
     }
+
+
+# ============================================================
+# AREA HELPER
+# ============================================================
+
+def math_pi():
+    """
+    Small helper kept here to avoid changing the existing
+    service structure.
+    """
+    import math
+
+    return math.pi

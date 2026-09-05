@@ -1,6 +1,6 @@
-from datetime import datetime
-import gc  # Garbage collector module to free RAM instantly
 import math
+import time
+from datetime import datetime
 
 try:
     from backend.ai.feature_extractor import extract_features
@@ -14,49 +14,208 @@ class AnalysisService:
 
     @staticmethod
     def analyze(latitude, longitude, radius):
-        # 1. Force Clean RAM before execution
-        gc.collect()
+        """
+        Complete AI analysis pipeline:
 
+        Location
+            ↓
+        Google Earth Engine
+            ↓
+        Sentinel-2 feature extraction
+            ↓
+        XGBoost prediction
+            ↓
+        Analysis result
+        """
+
+        start_time = time.time()
+
+        latitude = float(latitude)
+        longitude = float(longitude)
+        radius = float(radius)
+
+        if not (-90 <= latitude <= 90):
+            raise ValueError("Invalid latitude.")
+
+        if not (-180 <= longitude <= 180):
+            raise ValueError("Invalid longitude.")
+
+        if radius <= 0:
+            raise ValueError(
+                "Radius must be greater than zero."
+            )
+
+        # --------------------------------------------------
+        # 1. EXTRACT REAL SATELLITE FEATURES
+        # --------------------------------------------------
+
+        result = extract_features(
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius,
+        )
+
+        if not result:
+            raise RuntimeError(
+                "Google Earth Engine returned no feature data."
+            )
+
+        feature_vector = result.get(
+            "feature_vector"
+        )
+
+        if not feature_vector:
+            raise RuntimeError(
+                "Feature extraction returned an empty feature vector."
+            )
+
+        # Make sure all features are numeric.
         try:
-            result = extract_features(latitude, longitude, radius)
-        except Exception as e:
-            print(f"Error extracting features: {e}")
-            result = {
-                "statistics": {"Aspect": 0, "Elevation": 0, "Slope": 0, "NDVI": 0.3, "NDWI": -0.1, "NDBI": -0.05},
-                "features": {"B2": 0.05, "B3": 0.08, "B4": 0.1, "B8": 0.25, "B11": 0.2, "B12": 0.15, "BSI": 0.02, "EVI": 0.35, "SAVI": 0.28},
-                "feature_vector": [0] * 15
-            }
+            feature_vector = [
+                float(value)
+                for value in feature_vector
+            ]
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "Invalid feature values returned by Google Earth Engine."
+            ) from exc
 
-        try:
-            prediction = predict_land(result)
-        except Exception as e:
-            print(f"Error in prediction service: {e}")
-            prediction = {
-                "confidence": 0.85,
-                "class_id": 1,
-                "label": "Vegetation / Agriculture"
-            }
+        # The trained model expects 15 features.
+        if len(feature_vector) != 15:
+            raise RuntimeError(
+                "Invalid feature vector length. "
+                f"Expected 15 features, got {len(feature_vector)}."
+            )
 
-        total_area = round(math.pi * (radius ** 2) / 10000, 2)
+        # --------------------------------------------------
+        # 2. RUN XGBOOST PREDICTION
+        # --------------------------------------------------
+
+        prediction = predict_land(result)
+
+        if not prediction:
+            raise RuntimeError(
+                "XGBoost prediction returned no result."
+            )
+
+        # --------------------------------------------------
+        # 3. NORMALIZE PREDICTION DATA
+        # --------------------------------------------------
+
+        confidence = float(
+            prediction.get(
+                "confidence",
+                0.0,
+            )
+        )
+
+        # Predictor normally returns confidence as 0-100.
+        # Keep this service internally consistent.
+        if 0 <= confidence <= 1:
+            confidence_percent = confidence * 100
+        else:
+            confidence_percent = confidence
+
+        confidence_percent = max(
+            0.0,
+            min(
+                100.0,
+                confidence_percent,
+            ),
+        )
+
+        class_id = prediction.get(
+            "class_id"
+        )
+
+        class_name = (
+            prediction.get("class_name")
+            or prediction.get("label")
+            or "Unknown"
+        )
+
+        normalized_prediction = {
+            "class_id": (
+                int(class_id)
+                if class_id is not None
+                else None
+            ),
+            "class_name": str(class_name),
+            "label": str(class_name),
+            "confidence": round(
+                confidence_percent,
+                2,
+            ),
+        }
+
+        # --------------------------------------------------
+        # 4. AREA CALCULATION
+        # --------------------------------------------------
+
+        # radius is in metres.
+        #
+        # Area of circle:
+        # π × r²
+        #
+        # Convert square metres → hectares:
+        # 1 hectare = 10,000 m²
+
+        total_area = (
+            math.pi * (radius ** 2)
+        ) / 10000
+
+        total_area = round(
+            total_area,
+            2,
+        )
+
         mapped_area = total_area
-        confidence = prediction.get("confidence", 0.85)
 
-        # 2. Cleanup unused objects from memory instantly
-        output = {
-            "prediction": prediction,
-            "statistics": result.get("statistics", {}),
-            "features": result.get("features", {}),
+        # --------------------------------------------------
+        # 5. PERFORMANCE
+        # --------------------------------------------------
+
+        prediction_time = round(
+            time.time() - start_time,
+            2,
+        )
+
+        # --------------------------------------------------
+        # 6. FINAL RESULT
+        # --------------------------------------------------
+
+        return {
+            "prediction": normalized_prediction,
+
+            "statistics": result.get(
+                "statistics",
+                {},
+            ),
+
+            "features": result.get(
+                "features",
+                {},
+            ),
+
+            "feature_vector": feature_vector,
+
             "stats": {
                 "totalArea": total_area,
                 "mappedArea": mapped_area,
-                "confidence": confidence,
-                "predictionTime": "Earth Engine + XGBoost"
+                "confidence": round(
+                    confidence_percent,
+                    2,
+                ),
+                "predictionTime": (
+                    f"{prediction_time}s"
+                ),
             },
-            "created_at": datetime.now()
+
+            "location": {
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius": radius,
+            },
+
+            "created_at": datetime.utcnow(),
         }
-
-        # Clear memory before returning response
-        del result
-        gc.collect()
-
-        return output
