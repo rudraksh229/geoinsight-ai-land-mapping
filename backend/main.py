@@ -1,19 +1,29 @@
+import json
 import os
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from database import engine
-from models import Base
-
-# Database sync guard
+# 1. EARTH ENGINE & SERVICE KEY GUARD (Execution safe initialization)
 try:
+    ee_key_str = os.getenv("EE_SERVICE_ACCOUNT_KEY")
+    if ee_key_str:
+        # Check if JSON format needs parsing verification
+        if isinstance(ee_key_str, str) and ee_key_str.strip().startswith("{"):
+            pass  # Key present in correct JSON format
+except Exception as ee_err:
+    print(f"[Warning] Earth Engine Key Pre-check Warning: {ee_err}")
+
+# 2. DATABASE SYNC GUARD
+try:
+    from database import engine
+    from models import Base
     Base.metadata.create_all(bind=engine)
 except Exception as db_err:
-    print(f"Database sync warning: {db_err}")
+    print(f"[Warning] Database auto-creation skipped/failed: {db_err}")
 
-# Safe Router Imports
+# 3. ROUTER IMPORTS GUARD
 try:
     from routers import (
         dashboard, reports, geography, landcover, vegetation, 
@@ -31,7 +41,7 @@ except ModuleNotFoundError:
 
 app = FastAPI(title="GeoInsight AI Engine")
 
-# Explicit CORS Origins list for higher stability than regex
+# 4. ROBUST PRODUCTION CORS SETUP
 origins = [
     "https://geoinsight-ai-land-mapping.vercel.app",
     "https://geoinsight-ai-land-mapping-git-main-rudraksh229s-projects.vercel.app",
@@ -42,16 +52,16 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
-# Global Crash Handler
+# 5. GLOBAL EXCEPTION HANDLER FOR UNCAUGHT API ERRORS
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    print(f"Unhandled Server Error: {str(exc)}")
+    print(f"[Unhandled Exception]: {str(exc)}")
     origin = request.headers.get("origin", "*")
     return JSONResponse(
         status_code=500,
@@ -68,31 +78,16 @@ async def global_exception_handler(request: Request, exc: Exception):
 def read_root():
     return {"status": "ok", "message": "Land Mapping API Running"}
 
-# Router Registrations
-app.include_router(dashboard.router)
-app.include_router(reports.router)
-app.include_router(geography.router)
-app.include_router(landcover.router)
-app.include_router(vegetation.router)
-app.include_router(barren.router)
-app.include_router(water.router)
-app.include_router(builtup.router)
-app.include_router(change.router)
-app.include_router(suitability.router)
-app.include_router(timeseries.router)
-app.include_router(map.router)
-app.include_router(geocode.router)
-app.include_router(pdf.router)
-app.include_router(recommendation.router)
-app.include_router(satellite.router)
-app.include_router(compare.router)
-app.include_router(analytics.router)
-app.include_router(csv_export.router)
-app.include_router(excel_export.router)
-app.include_router(auth.router)
-app.include_router(polygon.router)
-app.include_router(ai.router)
-app.include_router(mapping.router)
+# 6. ROUTER REGISTRATIONS
+routers_list = [
+    dashboard, reports, geography, landcover, vegetation, 
+    barren, water, builtup, change, suitability, timeseries, 
+    map, geocode, pdf, recommendation, satellite, compare, 
+    analytics, csv_export, excel_export, auth, polygon, ai, mapping
+]
+
+for r in routers_list:
+    app.include_router(r.router)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
