@@ -4,7 +4,7 @@ from fastapi import (
 )
 
 from schemas import TimeSeriesRequest
-from services.time_series_service import vegetation_timeseries
+from services.timeseries_service import vegetation_timeseries
 
 
 router = APIRouter(
