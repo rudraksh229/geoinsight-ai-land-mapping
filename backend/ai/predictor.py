@@ -2,7 +2,7 @@ import os
 
 import joblib
 import numpy as np
-from xgboost import XGBClassifier
+import xgboost as xgb
 
 
 # ============================================================
@@ -56,25 +56,26 @@ def _get_model_and_encoder():
     global _encoder
 
     if _model is None:
+
         if not os.path.exists(MODEL_PATH):
             raise FileNotFoundError(
                 f"XGBoost model not found: {MODEL_PATH}"
             )
 
-        _model = XGBClassifier(
-            n_jobs=1,
-            verbosity=0,
-        )
+        print("Loading XGBoost Booster...")
+
+        _model = xgb.Booster()
 
         _model.load_model(
             MODEL_PATH
         )
 
         print(
-            "XGBoost land-classification model loaded successfully."
+            "XGBoost Booster loaded successfully."
         )
 
     if _encoder is None:
+
         if not os.path.exists(ENCODER_PATH):
             raise FileNotFoundError(
                 f"Label encoder not found: {ENCODER_PATH}"
@@ -103,7 +104,8 @@ def _get_model_and_encoder():
 
 def predict_land(features):
     """
-    Predict land-cover class using the trained XGBoost model.
+    Predict land-cover class using the trained
+    XGBoost Booster.
 
     Expected input:
 
@@ -132,14 +134,14 @@ def predict_land(features):
         )
 
     # --------------------------------------------------------
-    # Prepare a small NumPy array
+    # Convert to compact float32 array
     # --------------------------------------------------------
 
     try:
-        input_data = np.asarray(
+        input_array = np.asarray(
             feature_vector,
             dtype=np.float32,
-        ).reshape(1, -1)
+        ).reshape(1, 15)
 
     except (
         TypeError,
@@ -150,13 +152,17 @@ def predict_land(features):
         ) from exc
 
     # --------------------------------------------------------
-    # Single prediction call
+    # Create DMatrix
     # --------------------------------------------------------
 
     try:
-        probabilities = model.predict_proba(
-            input_data
-        )[0]
+        data = xgb.DMatrix(
+            input_array
+        )
+
+        probabilities = model.predict(
+            data
+        )
 
     except Exception as exc:
         raise RuntimeError(
@@ -164,21 +170,62 @@ def predict_land(features):
             f"Reason: {exc}"
         ) from exc
 
-    if probabilities is None or len(probabilities) == 0:
+    if probabilities is None:
         raise RuntimeError(
-            "XGBoost returned empty prediction probabilities."
+            "XGBoost returned no prediction."
+        )
+
+    probabilities = np.asarray(
+        probabilities
+    )
+
+    # --------------------------------------------------------
+    # Handle prediction shape
+    # --------------------------------------------------------
+
+    if probabilities.ndim == 1:
+
+        if probabilities.size == 1:
+            raise RuntimeError(
+                "XGBoost model returned a single "
+                "prediction instead of class probabilities."
+            )
+
+        class_probabilities = probabilities
+
+    elif probabilities.ndim == 2:
+
+        if probabilities.shape[0] < 1:
+            raise RuntimeError(
+                "XGBoost returned empty prediction output."
+            )
+
+        class_probabilities = probabilities[0]
+
+    else:
+        raise RuntimeError(
+            "Unexpected XGBoost prediction output shape: "
+            f"{probabilities.shape}"
         )
 
     # --------------------------------------------------------
-    # Predicted class + confidence
+    # Predicted class
     # --------------------------------------------------------
 
     encoded_prediction = int(
-        np.argmax(probabilities)
+        np.argmax(
+            class_probabilities
+        )
     )
 
+    # --------------------------------------------------------
+    # Confidence
+    # --------------------------------------------------------
+
     confidence = float(
-        np.max(probabilities) * 100
+        np.max(
+            class_probabilities
+        ) * 100
     )
 
     # --------------------------------------------------------
@@ -192,6 +239,7 @@ def predict_land(features):
         "inverse_transform"
     ):
         try:
+
             decoded = encoder.inverse_transform(
                 [encoded_prediction]
             )
@@ -202,6 +250,7 @@ def predict_land(features):
                 )
 
         except Exception as exc:
+
             print(
                 f"Label encoder decoding warning: {exc}"
             )
