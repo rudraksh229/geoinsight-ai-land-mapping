@@ -1,7 +1,9 @@
 import os
+import json
 
 import joblib
 import numpy as np
+import pandas as pd
 import xgboost as xgb
 
 
@@ -13,16 +15,24 @@ BASE_DIR = os.path.dirname(
     os.path.abspath(__file__)
 )
 
-MODEL_PATH = os.path.join(
+MODEL_DIR = os.path.join(
     BASE_DIR,
-    "models",
-    "xgboost_land_classifier.json",
+    "models"
+)
+
+MODEL_PATH = os.path.join(
+    MODEL_DIR,
+    "xgboost_land_classifier.json"
 )
 
 ENCODER_PATH = os.path.join(
-    BASE_DIR,
-    "models",
-    "label_encoder.pkl",
+    MODEL_DIR,
+    "label_encoder.pkl"
+)
+
+FEATURES_PATH = os.path.join(
+    MODEL_DIR,
+    "feature_names.json"
 )
 
 
@@ -32,28 +42,22 @@ ENCODER_PATH = os.path.join(
 
 _model = None
 _encoder = None
+_feature_names = None
 
 
 # ============================================================
-# LAND-COVER CLASSES
-# ============================================================
-
-CLASS_NAMES = {
-    0: "Vegetation",
-    1: "Agriculture",
-    2: "Built-up",
-    3: "Barren",
-    4: "Water",
-}
-
-
-# ============================================================
-# LOAD MODEL
+# LOAD MODEL, ENCODER AND FEATURES
 # ============================================================
 
 def _get_model_and_encoder():
+
     global _model
     global _encoder
+    global _feature_names
+
+    # --------------------------------------------------------
+    # Load XGBoost model
+    # --------------------------------------------------------
 
     if _model is None:
 
@@ -73,6 +77,10 @@ def _get_model_and_encoder():
         print(
             "XGBoost Booster loaded successfully."
         )
+
+    # --------------------------------------------------------
+    # Load label encoder
+    # --------------------------------------------------------
 
     if _encoder is None:
 
@@ -95,7 +103,51 @@ def _get_model_and_encoder():
                 list(_encoder.classes_)
             )
 
-    return _model, _encoder
+    # --------------------------------------------------------
+    # Load feature names
+    # --------------------------------------------------------
+
+    if _feature_names is None:
+
+        if not os.path.exists(FEATURES_PATH):
+            raise FileNotFoundError(
+                f"Feature names file not found: {FEATURES_PATH}"
+            )
+
+        with open(
+            FEATURES_PATH,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            _feature_names = json.load(file)
+
+        if not isinstance(
+            _feature_names,
+            list
+        ):
+
+            raise ValueError(
+                "feature_names.json must contain a list."
+            )
+
+        if len(_feature_names) != 15:
+
+            raise ValueError(
+                "Invalid feature_names.json. "
+                f"Expected 15 features, got {len(_feature_names)}."
+            )
+
+        print(
+            "FEATURE NAMES:",
+            _feature_names
+        )
+
+    return (
+        _model,
+        _encoder,
+        _feature_names
+    )
 
 
 # ============================================================
@@ -113,10 +165,20 @@ def predict_land(features):
             "feature_vector": [...]
         }
 
-    Returns confidence on a 0-100 scale.
+    The feature vector is converted into a Pandas
+    DataFrame with the exact feature names used
+    during model training.
     """
 
-    model, encoder = _get_model_and_encoder()
+    (
+        model,
+        encoder,
+        feature_names
+    ) = _get_model_and_encoder()
+
+    # --------------------------------------------------------
+    # Get feature vector
+    # --------------------------------------------------------
 
     feature_vector = features.get(
         "feature_vector"
@@ -134,30 +196,62 @@ def predict_land(features):
         )
 
     # --------------------------------------------------------
-    # Convert to compact float32 array
+    # Convert values to float
     # --------------------------------------------------------
 
     try:
-        input_array = np.asarray(
-            feature_vector,
-            dtype=np.float32,
-        ).reshape(1, 15)
+
+        feature_vector = [
+            float(value)
+            for value in feature_vector
+        ]
 
     except (
         TypeError,
-        ValueError,
+        ValueError
     ) as exc:
+
         raise ValueError(
             "Feature vector contains invalid values."
         ) from exc
 
     # --------------------------------------------------------
-    # Create DMatrix
+    # Create named DataFrame
     # --------------------------------------------------------
 
     try:
+
+        input_df = pd.DataFrame(
+            [
+                feature_vector
+            ],
+            columns=feature_names
+        )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "Failed to create feature DataFrame. "
+            f"Reason: {exc}"
+        ) from exc
+
+    # --------------------------------------------------------
+    # Ensure exact feature order
+    # --------------------------------------------------------
+
+    input_df = input_df[
+        feature_names
+    ]
+
+    # --------------------------------------------------------
+    # Create DMatrix WITH feature names
+    # --------------------------------------------------------
+
+    try:
+
         data = xgb.DMatrix(
-            input_array
+            input_df,
+            feature_names=feature_names
         )
 
         probabilities = model.predict(
@@ -165,12 +259,18 @@ def predict_land(features):
         )
 
     except Exception as exc:
+
         raise RuntimeError(
             "XGBoost prediction failed. "
             f"Reason: {exc}"
         ) from exc
 
+    # --------------------------------------------------------
+    # Validate prediction output
+    # --------------------------------------------------------
+
     if probabilities is None:
+
         raise RuntimeError(
             "XGBoost returned no prediction."
         )
@@ -186,6 +286,7 @@ def predict_land(features):
     if probabilities.ndim == 1:
 
         if probabilities.size == 1:
+
             raise RuntimeError(
                 "XGBoost model returned a single "
                 "prediction instead of class probabilities."
@@ -196,6 +297,7 @@ def predict_land(features):
     elif probabilities.ndim == 2:
 
         if probabilities.shape[0] < 1:
+
             raise RuntimeError(
                 "XGBoost returned empty prediction output."
             )
@@ -203,13 +305,14 @@ def predict_land(features):
         class_probabilities = probabilities[0]
 
     else:
+
         raise RuntimeError(
             "Unexpected XGBoost prediction output shape: "
             f"{probabilities.shape}"
         )
 
     # --------------------------------------------------------
-    # Predicted class
+    # Predicted encoded class
     # --------------------------------------------------------
 
     encoded_prediction = int(
@@ -229,7 +332,7 @@ def predict_land(features):
     )
 
     # --------------------------------------------------------
-    # Decode class
+    # Decode class using LabelEncoder
     # --------------------------------------------------------
 
     class_name = None
@@ -238,6 +341,7 @@ def predict_land(features):
         encoder,
         "inverse_transform"
     ):
+
         try:
 
             decoded = encoder.inverse_transform(
@@ -245,6 +349,7 @@ def predict_land(features):
             )
 
             if len(decoded) > 0:
+
                 class_name = str(
                     decoded[0]
                 )
@@ -252,45 +357,19 @@ def predict_land(features):
         except Exception as exc:
 
             print(
-                f"Label encoder decoding warning: {exc}"
+                "Label encoder decoding warning:",
+                exc
             )
 
     # --------------------------------------------------------
-    # Fallback class mapping
+    # Fallback
     # --------------------------------------------------------
 
     if not class_name:
-        class_name = CLASS_NAMES.get(
-            encoded_prediction,
-            "Unknown",
+
+        class_name = str(
+            encoded_prediction
         )
-
-    # --------------------------------------------------------
-    # Normalize label
-    # --------------------------------------------------------
-
-    normalized_name = (
-        class_name
-        .strip()
-        .lower()
-    )
-
-    label_map = {
-        "vegetation": "Vegetation",
-        "vegetative": "Vegetation",
-        "agriculture": "Agriculture",
-        "agricultural": "Agriculture",
-        "built-up": "Built-up",
-        "builtup": "Built-up",
-        "urban": "Built-up",
-        "barren": "Barren",
-        "water": "Water",
-    }
-
-    final_class_name = label_map.get(
-        normalized_name,
-        class_name,
-    )
 
     # --------------------------------------------------------
     # Final result
@@ -299,12 +378,12 @@ def predict_land(features):
     return {
         "class_id": encoded_prediction,
 
-        "class_name": final_class_name,
+        "class_name": class_name,
 
-        "label": final_class_name,
+        "label": class_name,
 
         "confidence": round(
             confidence,
-            2,
+            2
         ),
     }
