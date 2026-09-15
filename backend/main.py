@@ -1,4 +1,3 @@
-
 import os
 
 import uvicorn
@@ -20,61 +19,32 @@ from models import User, Analysis, Report
 # ROUTERS
 # ============================================================
 
-try:
-    from routers import (
-        dashboard,
-        reports,
-        geography,
-        landcover,
-        vegetation,
-        barren,
-        water,
-        builtup,
-        change,
-        suitability,
-        timeseries,
-        map,
-        geocode,
-        pdf,
-        recommendation,
-        satellite,
-        compare,
-        analytics,
-        csv_export,
-        excel_export,
-        auth,
-        polygon,
-        ai,
-        mapping,
-    )
-
-except ModuleNotFoundError:
-    from backend.routers import (
-        dashboard,
-        reports,
-        geography,
-        landcover,
-        vegetation,
-        barren,
-        water,
-        builtup,
-        change,
-        suitability,
-        timeseries,
-        map,
-        geocode,
-        pdf,
-        recommendation,
-        satellite,
-        compare,
-        analytics,
-        csv_export,
-        excel_export,
-        auth,
-        polygon,
-        ai,
-        mapping,
-    )
+from routers import (
+    dashboard,
+    reports,
+    geography,
+    landcover,
+    vegetation,
+    barren,
+    water,
+    builtup,
+    change,
+    suitability,
+    timeseries,
+    map,
+    geocode,
+    pdf,
+    recommendation,
+    satellite,
+    compare,
+    analytics,
+    csv_export,
+    excel_export,
+    auth,
+    polygon,
+    ai,
+    mapping,
+)
 
 
 # ============================================================
@@ -148,11 +118,11 @@ def startup_event():
         print(
             "[Database] Initialization failed:"
         )
+
         print(
             str(exc)
         )
 
-        # Do not silently hide a database failure.
         raise
 
 
