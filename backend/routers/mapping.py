@@ -6,14 +6,14 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from backend import models
-from backend import schemas
-from backend.database import get_db
-from backend.auth import get_current_user
+import models
+from schemas import MappingRequest
+from database import get_db
+from auth import get_current_user
 
-from backend.services.analysis_service import AnalysisService
-from backend.ai.feature_extractor import extract_feature_grid
-from backend.ai.predictor import predict_land_grid
+from services.analysis_service import AnalysisService
+from ai.feature_extractor import extract_feature_grid
+from ai.predictor import predict_land_grid
 
 
 # ============================================================
@@ -710,23 +710,23 @@ def analyze_land(
 
             status="Completed",
 
-            vegetation_area=land_cover[
+            vegetation=land_cover[
                 "vegetation"
             ],
 
-            agriculture_area=land_cover[
+            agriculture=land_cover[
                 "agriculture"
             ],
 
-            barren_area=land_cover[
+            barren=land_cover[
                 "barren"
             ],
 
-            water_area=land_cover[
+            water=land_cover[
                 "water"
             ],
 
-            builtup_area=land_cover[
+            builtup=land_cover[
                 "builtup"
             ],
         )
