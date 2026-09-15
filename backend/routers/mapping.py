@@ -54,19 +54,17 @@ def calculate_land_cover_from_prediction(
     total_area: float,
 ):
     """
-    Convert the single XGBoost prediction into
+    Convert the XGBoost prediction into
     dashboard land-cover area values.
+
+    The predictor returns the original WorldCover
+    label through class_name, for example:
+    10, 20, 30, 40, 50, 60, 80, 90.
 
     Since the current model predicts one class for
     the analyzed area, the complete mapped area is
-    assigned to the predicted class.
+    assigned to the predicted category.
     """
-
-    class_name = str(
-        prediction.get("class_name")
-        or prediction.get("label")
-        or "Unknown"
-    ).strip().lower()
 
     values = {
         "vegetation": 0.0,
@@ -76,20 +74,51 @@ def calculate_land_cover_from_prediction(
         "builtup": 0.0,
     }
 
-    if "vegetation" in class_name:
+    # Get original WorldCover label.
+    raw_class = (
+        prediction.get("class_name")
+        or prediction.get("label")
+    )
+
+    try:
+        class_label = int(float(raw_class))
+    except (TypeError, ValueError):
+        class_label = None
+
+    # --------------------------------------------------------
+    # WorldCover class grouping
+    # --------------------------------------------------------
+    #
+    # 10 = Tree cover
+    # 20 = Shrubland
+    # 30 = Grassland
+    # 40 = Cropland
+    # 50 = Built-up
+    # 60 = Bare / sparse vegetation
+    # 80 = Permanent water
+    # 90 = Herbaceous wetland
+    #
+
+    if class_label in {10, 20, 30, 90}:
         values["vegetation"] = total_area
 
-    elif "agriculture" in class_name:
+    elif class_label == 40:
         values["agriculture"] = total_area
 
-    elif "barren" in class_name:
+    elif class_label == 50:
+        values["builtup"] = total_area
+
+    elif class_label == 60:
         values["barren"] = total_area
 
-    elif "water" in class_name:
+    elif class_label == 80:
         values["water"] = total_area
 
-    elif "built" in class_name or "urban" in class_name:
-        values["builtup"] = total_area
+    else:
+        logger.warning(
+            "Unknown land-cover class returned by model: %s",
+            raw_class,
+        )
 
     return values
 
