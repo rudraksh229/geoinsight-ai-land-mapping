@@ -144,6 +144,7 @@ const LandMapping = () => {
 
       const res = await api.post('/mapping/analyze', payload);
       setAnalysisResults(res.data);
+      window.dispatchEvent(new Event('analysisCompleted'));
       showToast('AI classification generated successfully!', 'success');
     } catch (err) {
       console.error('Land analysis error:', err);
@@ -166,27 +167,70 @@ const LandMapping = () => {
 
   // DYNAMIC CLASS-BASED COLOR MAPPING LOGIC
   const getLandCoverColor = (properties) => {
-    if (!properties) return '#94a3b8';
+  if (!properties) return '#94a3b8';
 
-    if (properties.color) return properties.color;
+  if (properties.color) return properties.color;
 
-    const type = (properties.type || properties.class || properties.label || '').toLowerCase();
+  const type = (
+    properties.type ||
+    properties.className ||
+    properties.class_name ||
+    properties.class ||
+    properties.label ||
+    ''
+  ).toLowerCase();
 
-    if (type.includes('vegetation') || type.includes('forest') || type.includes('crop') || type.includes('green')) {
-      return '#2ecc71'; // Green
-    }
-    if (type.includes('barren') || type.includes('fallow') || type.includes('dry') || type.includes('wasteland')) {
-      return '#f39c12'; // Yellow/Amber
-    }
-    if (type.includes('built') || type.includes('urban') || type.includes('settlement') || type.includes('building')) {
-      return '#e74c3c'; // Red
-    }
-    if (type.includes('water') || type.includes('river') || type.includes('lake') || type.includes('pond')) {
-      return '#3498db'; // Blue
-    }
+  if (
+    ['10', '20', '30', '90'].includes(type) ||
+    type.includes('vegetation') ||
+    type.includes('forest') ||
+    type.includes('grass') ||
+    type.includes('shrub')
+  ) {
+    return '#22c55e';
+  }
 
-    return '#16a34a';
-  };
+  if (
+    type === '40' ||
+    type.includes('agriculture') ||
+    type.includes('crop') ||
+    type.includes('cropland')
+  ) {
+    return '#eab308';
+  }
+
+  if (
+    type === '50' ||
+    type.includes('built') ||
+    type.includes('urban') ||
+    type.includes('settlement')
+  ) {
+    return '#ef4444';
+  }
+
+  if (
+    type === '60' ||
+    type.includes('barren') ||
+    type.includes('bare') ||
+    type.includes('fallow') ||
+    type.includes('dry') ||
+    type.includes('wasteland')
+  ) {
+    return '#a16207';
+  }
+
+  if (
+    type === '80' ||
+    type.includes('water') ||
+    type.includes('river') ||
+    type.includes('lake') ||
+    type.includes('pond')
+  ) {
+    return '#3b82f6';
+  }
+
+  return '#94a3b8';
+};
 
   const geoJsonStyle = (feature) => {
     const fillColor = getLandCoverColor(feature?.properties);
@@ -201,20 +245,64 @@ const LandMapping = () => {
   };
 
   const onEachFeature = (feature, layer) => {
-    if (feature.properties) {
-      const label = feature.properties.label || 'Classification Area';
-      const classType = feature.properties.type || feature.properties.class || 'N/A';
-      const area = feature.properties.area || 'N/A';
+  if (feature.properties) {
+    const rawClass =
+      feature.properties.className ||
+      feature.properties.class_name ||
+      feature.properties.class ||
+      feature.properties.type ||
+      feature.properties.label ||
+      'Unknown';
 
-      layer.bindPopup(`
-        <div style="font-family: sans-serif; padding: 4px;">
-          <h5 style="font-weight: bold; font-size: 12px; margin: 0; color: #1e293b; text-transform: uppercase;">${label}</h5>
-          <p style="font-size: 10px; margin: 4px 0 0 0; color: #64748b;">Classification: <b style="color: #0f172a;">${classType}</b></p>
-          <p style="font-size: 10px; margin: 2px 0 0 0; color: #64748b;">Calculated Area: <b style="color: #0f172a;">${area}</b></p>
-        </div>
-      `);
-    }
-  };
+    const classNames = {
+      '10': 'Vegetation',
+      '20': 'Vegetation',
+      '30': 'Vegetation',
+      '40': 'Agriculture',
+      '50': 'Built-up',
+      '60': 'Barren Land',
+      '80': 'Water',
+      '90': 'Vegetation',
+    };
+
+    const classType =
+      classNames[String(rawClass)] ||
+      String(rawClass);
+
+    const area = feature.properties.area ?? 'N/A';
+    const confidence =
+      feature.properties.confidence ?? 'N/A';
+
+    layer.bindPopup(`
+      <div style="font-family: sans-serif; padding: 4px;">
+        <h5 style="font-weight: bold; font-size: 12px; margin: 0; color: #1e293b; text-transform: uppercase;">
+          Land Classification
+        </h5>
+
+        <p style="font-size: 10px; margin: 4px 0 0 0; color: #64748b;">
+          Classification:
+          <b style="color: #0f172a;">
+            ${classType}
+          </b>
+        </p>
+
+        <p style="font-size: 10px; margin: 2px 0 0 0; color: #64748b;">
+          Calculated Area:
+          <b style="color: #0f172a;">
+            ${area} Ha
+          </b>
+        </p>
+
+        <p style="font-size: 10px; margin: 2px 0 0 0; color: #64748b;">
+          Confidence:
+          <b style="color: #0f172a;">
+            ${confidence}%
+          </b>
+        </p>
+      </div>
+    `);
+  }
+};
 
   const baseMapTilesUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 

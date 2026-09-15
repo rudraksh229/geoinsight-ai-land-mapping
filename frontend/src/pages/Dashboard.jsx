@@ -129,14 +129,28 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
-
-
   // ==========================================
-  // INITIAL LOAD
+  // INITIAL LOAD + ANALYSIS REFRESH
   // ==========================================
 
   useEffect(() => {
     fetchDashboardData();
+
+    const handleAnalysisCompleted = () => {
+      fetchDashboardData();
+    };
+
+    window.addEventListener(
+      'analysisCompleted',
+      handleAnalysisCompleted
+    );
+
+    return () => {
+      window.removeEventListener(
+        'analysisCompleted',
+        handleAnalysisCompleted
+      );
+    };
   }, []);
 
 
