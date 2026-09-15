@@ -10,23 +10,27 @@ import xgboost as xgb
 # MODEL PATHS
 # ============================================================
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+MODEL_DIR = os.path.join(
+    BASE_DIR,
+    "models"
+)
 
 MODEL_PATH = os.path.join(
-    BASE_DIR,
-    "model",
+    MODEL_DIR,
     "xgboost_land_classifier.json"
 )
 
 ENCODER_PATH = os.path.join(
-    BASE_DIR,
-    "model",
+    MODEL_DIR,
     "label_encoder.pkl"
 )
 
 FEATURE_NAMES_PATH = os.path.join(
-    BASE_DIR,
-    "model",
+    MODEL_DIR,
     "feature_names.json"
 )
 
@@ -643,4 +647,3 @@ def predict_land_grid(grid_features):
         )
 
     return predictions
-    
