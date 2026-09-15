@@ -32,6 +32,7 @@ def get_user_id(current_user):
     """
     Safely get user ID from the authenticated user.
     """
+
     if current_user is None:
         return None
 
@@ -53,30 +54,33 @@ def get_land_cover_color(class_id=None, class_name=None):
     Return map color according to predicted land-cover class.
     """
 
-    # Numeric class mapping
     if class_id is not None:
         try:
             class_id = int(class_id)
 
+            # Vegetation
             if class_id in [10, 20, 30, 90]:
-                return "#22c55e"       # Vegetation
+                return "#22c55e"
 
+            # Agriculture
             if class_id == 40:
-                return "#eab308"       # Agriculture
+                return "#eab308"
 
+            # Built-up
             if class_id == 50:
-                return "#ef4444"       # Built-up
+                return "#ef4444"
 
+            # Barren
             if class_id == 60:
-                return "#a16207"       # Barren
+                return "#a16207"
 
+            # Water
             if class_id == 80:
-                return "#3b82f6"       # Water
+                return "#3b82f6"
 
         except (TypeError, ValueError):
             pass
 
-    # Text mapping
     if class_name:
         name = str(class_name).lower().strip()
 
@@ -111,18 +115,23 @@ def get_land_cover_category(class_id=None, class_name=None):
         try:
             class_id = int(class_id)
 
+            # Vegetation
             if class_id in [10, 20, 30, 90]:
                 return "vegetation"
 
+            # Agriculture
             if class_id == 40:
                 return "agriculture"
 
+            # Built-up
             if class_id == 50:
                 return "builtup"
 
+            # Barren
             if class_id == 60:
                 return "barren"
 
+            # Water
             if class_id == 80:
                 return "water"
 
@@ -162,6 +171,7 @@ def create_grid_geojson(predictions):
     features = []
 
     for prediction in predictions:
+
         geometry = prediction.get("geometry")
 
         if not geometry:
@@ -169,7 +179,11 @@ def create_grid_geojson(predictions):
 
         class_id = prediction.get("class_id")
         class_name = prediction.get("class_name")
-        label = prediction.get("label", class_name)
+
+        label = prediction.get(
+            "label",
+            class_name,
+        )
 
         category = get_land_cover_category(
             class_id=class_id,
@@ -181,25 +195,49 @@ def create_grid_geojson(predictions):
             class_name=class_name,
         )
 
-        area_ha = prediction.get("area_ha", 0.0)
-
         try:
-            area_ha = float(area_ha)
+            area_ha = float(
+                prediction.get(
+                    "area_ha",
+                    0.0,
+                )
+            )
         except (TypeError, ValueError):
             area_ha = 0.0
 
         feature = {
             "type": "Feature",
+
             "geometry": geometry,
+
             "properties": {
-                "gridId": prediction.get("grid_id"),
+                "gridId": prediction.get(
+                    "grid_id"
+                ),
+
                 "classId": class_id,
+
                 "className": class_name,
+
                 "label": label,
+
                 "landClass": category,
-                "confidence": prediction.get("confidence", 0.0),
-                "area": round(area_ha, 4),
-                "areaHa": round(area_ha, 4),
+
+                "confidence": prediction.get(
+                    "confidence",
+                    0.0,
+                ),
+
+                "area": round(
+                    area_ha,
+                    4,
+                ),
+
+                "areaHa": round(
+                    area_ha,
+                    4,
+                ),
+
                 "color": color,
             },
         }
@@ -230,16 +268,26 @@ def calculate_grid_land_cover(predictions):
     }
 
     for prediction in predictions:
+
         category = get_land_cover_category(
-            class_id=prediction.get("class_id"),
-            class_name=prediction.get("class_name"),
+            class_id=prediction.get(
+                "class_id"
+            ),
+            class_name=prediction.get(
+                "class_name"
+            ),
         )
 
         if category not in land_cover:
             continue
 
         try:
-            area_ha = float(prediction.get("area_ha", 0.0))
+            area_ha = float(
+                prediction.get(
+                    "area_ha",
+                    0.0,
+                )
+            )
         except (TypeError, ValueError):
             area_ha = 0.0
 
@@ -255,16 +303,22 @@ def calculate_grid_land_cover(predictions):
 # FALLBACK CIRCLE GEOJSON
 # =========================================================
 
-def create_circle_geojson(latitude, longitude, radius):
+def create_circle_geojson(
+    latitude,
+    longitude,
+    radius,
+):
     """
     Fallback geometry when grid mapping is unavailable.
     """
 
     return {
         "type": "FeatureCollection",
+
         "features": [
             {
                 "type": "Feature",
+
                 "geometry": {
                     "type": "Point",
                     "coordinates": [
@@ -272,6 +326,7 @@ def create_circle_geojson(latitude, longitude, radius):
                         latitude,
                     ],
                 },
+
                 "properties": {
                     "radius": radius,
                     "color": "#94a3b8",
@@ -314,9 +369,20 @@ def analyze_land(
         # VALIDATION
         # =================================================
 
-        latitude = float(request_data.latitude)
-        longitude = float(request_data.longitude)
-        radius = float(request_data.radius)
+        # IMPORTANT:
+        # MappingRequest uses lat/lng, not latitude/longitude.
+
+        latitude = float(
+            request_data.lat
+        )
+
+        longitude = float(
+            request_data.lng
+        )
+
+        radius = float(
+            request_data.radius
+        )
 
         if latitude < -90 or latitude > 90:
             raise HTTPException(
@@ -387,9 +453,15 @@ def analyze_land(
         )
 
         try:
-            total_area = float(total_area)
+            total_area = float(
+                total_area
+            )
         except (TypeError, ValueError):
-            total_area = math.pi * (radius ** 2) / 10000.0
+            total_area = (
+                math.pi
+                * (radius ** 2)
+                / 10000.0
+            )
 
         # =================================================
         # STEP 2 — CREATE FEATURE GRID
@@ -454,6 +526,7 @@ def analyze_land(
         # =================================================
 
         if mapped_area <= 0:
+
             try:
                 mapped_area = float(
                     regional_result.get(
@@ -461,7 +534,11 @@ def analyze_land(
                         0.0,
                     )
                 )
-            except (TypeError, ValueError):
+
+            except (
+                TypeError,
+                ValueError,
+            ):
                 mapped_area = 0.0
 
         # =================================================
@@ -474,11 +551,19 @@ def analyze_land(
         )
 
         try:
-            confidence = float(confidence)
-        except (TypeError, ValueError):
+            confidence = float(
+                confidence
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
             confidence = 0.0
 
-        # Store confidence as percentage in DB
+        # Store confidence as percentage
+        # in the database.
+
         db_confidence = confidence
 
         if db_confidence <= 1:
@@ -502,6 +587,7 @@ def analyze_land(
         # =================================================
 
         analysis = models.Analysis(
+
             user_id=user_id,
 
             village=getattr(
@@ -523,7 +609,9 @@ def analyze_land(
             ),
 
             latitude=latitude,
+
             longitude=longitude,
+
             radius=radius,
 
             date=datetime.utcnow(),
@@ -561,7 +649,9 @@ def analyze_land(
         )
 
         db.add(analysis)
+
         db.commit()
+
         db.refresh(analysis)
 
         # =================================================
@@ -569,7 +659,8 @@ def analyze_land(
         # =================================================
 
         processing_time = round(
-            time.time() - start_time,
+            time.time()
+            - start_time,
             2,
         )
 
@@ -578,6 +669,7 @@ def analyze_land(
         # =================================================
 
         return {
+
             "success": True,
 
             "prediction": prediction,
@@ -597,6 +689,7 @@ def analyze_land(
             "mapData": map_data,
 
             "landCover": {
+
                 "vegetation": land_cover[
                     "vegetation"
                 ],
@@ -619,6 +712,7 @@ def analyze_land(
             },
 
             "grid": {
+
                 "totalCells": len(
                     grid_features
                 ),
@@ -639,7 +733,9 @@ def analyze_land(
 
             "processingTime": processing_time,
 
-            "created_at": analysis.created_at,
+            "created_at": (
+                analysis.created_at
+            ),
         }
 
     except HTTPException:
