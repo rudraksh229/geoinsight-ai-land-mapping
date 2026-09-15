@@ -1,6 +1,5 @@
 import os
 import json
-
 import joblib
 import numpy as np
 import pandas as pd
@@ -11,163 +10,125 @@ import xgboost as xgb
 # MODEL PATHS
 # ============================================================
 
-BASE_DIR = os.path.dirname(
-    os.path.abspath(__file__)
-)
-
-MODEL_DIR = os.path.join(
-    BASE_DIR,
-    "models"
-)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MODEL_PATH = os.path.join(
-    MODEL_DIR,
+    BASE_DIR,
+    "model",
     "xgboost_land_classifier.json"
 )
 
 ENCODER_PATH = os.path.join(
-    MODEL_DIR,
+    BASE_DIR,
+    "model",
     "label_encoder.pkl"
 )
 
-FEATURES_PATH = os.path.join(
-    MODEL_DIR,
+FEATURE_NAMES_PATH = os.path.join(
+    BASE_DIR,
+    "model",
     "feature_names.json"
 )
 
 
 # ============================================================
-# MODEL CACHE
-# ============================================================
-
-_model = None
-_encoder = None
-_feature_names = None
-
-
-# ============================================================
-# LOAD MODEL, ENCODER AND FEATURES
+# LOAD MODEL + ENCODER + FEATURE NAMES
 # ============================================================
 
 def _get_model_and_encoder():
 
-    global _model
-    global _encoder
-    global _feature_names
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(
+            f"XGBoost model not found: {MODEL_PATH}"
+        )
+
+    if not os.path.exists(ENCODER_PATH):
+        raise FileNotFoundError(
+            f"Label encoder not found: {ENCODER_PATH}"
+        )
+
+    if not os.path.exists(FEATURE_NAMES_PATH):
+        raise FileNotFoundError(
+            f"Feature names file not found: {FEATURE_NAMES_PATH}"
+        )
 
     # --------------------------------------------------------
     # Load XGBoost model
     # --------------------------------------------------------
 
-    if _model is None:
+    model = xgb.Booster()
 
-        if not os.path.exists(MODEL_PATH):
-            raise FileNotFoundError(
-                f"XGBoost model not found: {MODEL_PATH}"
-            )
-
-        print("Loading XGBoost Booster...")
-
-        _model = xgb.Booster()
-
-        _model.load_model(
-            MODEL_PATH
-        )
-
-        print(
-            "XGBoost Booster loaded successfully."
-        )
+    model.load_model(
+        MODEL_PATH
+    )
 
     # --------------------------------------------------------
     # Load label encoder
     # --------------------------------------------------------
 
-    if _encoder is None:
-
-        if not os.path.exists(ENCODER_PATH):
-            raise FileNotFoundError(
-                f"Label encoder not found: {ENCODER_PATH}"
-            )
-
-        _encoder = joblib.load(
-            ENCODER_PATH
-        )
-
-        print(
-            "Label encoder loaded successfully."
-        )
-
-        if hasattr(_encoder, "classes_"):
-            print(
-                "LABEL ENCODER CLASSES:",
-                list(_encoder.classes_)
-            )
+    encoder = joblib.load(
+        ENCODER_PATH
+    )
 
     # --------------------------------------------------------
     # Load feature names
     # --------------------------------------------------------
 
-    if _feature_names is None:
+    with open(
+        FEATURE_NAMES_PATH,
+        "r"
+    ) as file:
 
-        if not os.path.exists(FEATURES_PATH):
-            raise FileNotFoundError(
-                f"Feature names file not found: {FEATURES_PATH}"
-            )
+        feature_names = json.load(
+            file
+        )
 
-        with open(
-            FEATURES_PATH,
-            "r",
-            encoding="utf-8"
-        ) as file:
+    if not isinstance(
+        feature_names,
+        list
+    ):
 
-            _feature_names = json.load(file)
+        raise RuntimeError(
+            "feature_names.json must contain a list."
+        )
 
-        if not isinstance(
-            _feature_names,
-            list
-        ):
+    if len(feature_names) != 15:
 
-            raise ValueError(
-                "feature_names.json must contain a list."
-            )
-
-        if len(_feature_names) != 15:
-
-            raise ValueError(
-                "Invalid feature_names.json. "
-                f"Expected 15 features, got {len(_feature_names)}."
-            )
-
-        print(
-            "FEATURE NAMES:",
-            _feature_names
+        raise RuntimeError(
+            "Expected exactly 15 feature names, "
+            f"but found {len(feature_names)}."
         )
 
     return (
-        _model,
-        _encoder,
-        _feature_names
+        model,
+        encoder,
+        feature_names
     )
 
 
 # ============================================================
-# PREDICTION
+# SINGLE LAND PREDICTION
 # ============================================================
 
 def predict_land(features):
     """
-    Predict land-cover class using the trained
-    XGBoost Booster.
+    Predict land-cover class for one location.
 
     Expected input:
-
         {
             "feature_vector": [...]
         }
 
-    The feature vector is converted into a Pandas
-    DataFrame with the exact feature names used
-    during model training.
+    or directly:
+        [...]
+
+    Returns:
+        {
+            "class_id": ...,
+            "class_name": ...,
+            "label": ...,
+            "confidence": ...
+        }
     """
 
     (
@@ -177,22 +138,33 @@ def predict_land(features):
     ) = _get_model_and_encoder()
 
     # --------------------------------------------------------
-    # Get feature vector
+    # Extract feature vector
     # --------------------------------------------------------
 
-    feature_vector = features.get(
-        "feature_vector"
-    )
+    if isinstance(
+        features,
+        dict
+    ):
+
+        feature_vector = features.get(
+            "feature_vector"
+        )
+
+    else:
+
+        feature_vector = features
 
     if not feature_vector:
+
         raise ValueError(
             "Feature vector is empty."
         )
 
     if len(feature_vector) != 15:
+
         raise ValueError(
-            "Invalid feature vector length. "
-            f"Expected 15 features, got {len(feature_vector)}."
+            "Expected exactly 15 features, "
+            f"but received {len(feature_vector)}."
         )
 
     # --------------------------------------------------------
@@ -216,35 +188,29 @@ def predict_land(features):
         ) from exc
 
     # --------------------------------------------------------
-    # Create named DataFrame
+    # Create DataFrame
     # --------------------------------------------------------
 
     try:
 
         input_df = pd.DataFrame(
-            [
-                feature_vector
-            ],
+            [feature_vector],
             columns=feature_names
         )
+
+        input_df = input_df[
+            feature_names
+        ]
 
     except Exception as exc:
 
         raise RuntimeError(
-            "Failed to create feature DataFrame. "
+            "Failed to create prediction DataFrame. "
             f"Reason: {exc}"
         ) from exc
 
     # --------------------------------------------------------
-    # Ensure exact feature order
-    # --------------------------------------------------------
-
-    input_df = input_df[
-        feature_names
-    ]
-
-    # --------------------------------------------------------
-    # Create DMatrix WITH feature names
+    # XGBoost prediction
     # --------------------------------------------------------
 
     try:
@@ -265,41 +231,32 @@ def predict_land(features):
             f"Reason: {exc}"
         ) from exc
 
-    # --------------------------------------------------------
-    # Validate prediction output
-    # --------------------------------------------------------
-
-    if probabilities is None:
-
-        raise RuntimeError(
-            "XGBoost returned no prediction."
-        )
-
     probabilities = np.asarray(
         probabilities
     )
 
     # --------------------------------------------------------
-    # Handle prediction shape
+    # Validate prediction output
     # --------------------------------------------------------
 
+    if probabilities.size == 0:
+
+        raise RuntimeError(
+            "XGBoost returned no prediction."
+        )
+
     if probabilities.ndim == 1:
-
-        if probabilities.size == 1:
-
-            raise RuntimeError(
-                "XGBoost model returned a single "
-                "prediction instead of class probabilities."
-            )
 
         class_probabilities = probabilities
 
     elif probabilities.ndim == 2:
 
-        if probabilities.shape[0] < 1:
+        if probabilities.shape[0] != 1:
 
             raise RuntimeError(
-                "XGBoost returned empty prediction output."
+                "Expected one prediction for one "
+                "feature vector, but received "
+                f"{probabilities.shape[0]} predictions."
             )
 
         class_probabilities = probabilities[0]
@@ -307,12 +264,12 @@ def predict_land(features):
     else:
 
         raise RuntimeError(
-            "Unexpected XGBoost prediction output shape: "
+            "Unexpected XGBoost prediction shape: "
             f"{probabilities.shape}"
         )
 
     # --------------------------------------------------------
-    # Predicted encoded class
+    # Get predicted class
     # --------------------------------------------------------
 
     encoded_prediction = int(
@@ -321,10 +278,6 @@ def predict_land(features):
         )
     )
 
-    # --------------------------------------------------------
-    # Confidence
-    # --------------------------------------------------------
-
     confidence = float(
         np.max(
             class_probabilities
@@ -332,7 +285,7 @@ def predict_land(features):
     )
 
     # --------------------------------------------------------
-    # Decode class using LabelEncoder
+    # Decode class
     # --------------------------------------------------------
 
     class_name = None
@@ -357,13 +310,9 @@ def predict_land(features):
         except Exception as exc:
 
             print(
-                "Label encoder decoding warning:",
+                "Label decoding warning:",
                 exc
             )
-
-    # --------------------------------------------------------
-    # Fallback
-    # --------------------------------------------------------
 
     if not class_name:
 
@@ -372,7 +321,7 @@ def predict_land(features):
         )
 
     # --------------------------------------------------------
-    # Final result
+    # Return prediction
     # --------------------------------------------------------
 
     return {
@@ -387,3 +336,311 @@ def predict_land(features):
             2
         ),
     }
+
+
+# ============================================================
+# GRID LAND PREDICTION
+# ============================================================
+
+def predict_land_grid(grid_features):
+    """
+    Predict land-cover class for multiple grid cells.
+
+    Expected input:
+
+        [
+            {
+                "grid_id": 0,
+                "feature_vector": [...],
+                "geometry": {...},
+                "area_ha": 0.85
+            },
+            ...
+        ]
+
+    Returns one prediction for every valid grid cell.
+    """
+
+    (
+        model,
+        encoder,
+        feature_names
+    ) = _get_model_and_encoder()
+
+    if not grid_features:
+
+        raise ValueError(
+            "Grid feature list is empty."
+        )
+
+    # --------------------------------------------------------
+    # Prepare feature vectors
+    # --------------------------------------------------------
+
+    feature_vectors = []
+
+    valid_cells = []
+
+    for cell in grid_features:
+
+        if not isinstance(
+            cell,
+            dict
+        ):
+            continue
+
+        feature_vector = cell.get(
+            "feature_vector"
+        )
+
+        if not feature_vector:
+            continue
+
+        if len(feature_vector) != 15:
+            continue
+
+        try:
+
+            feature_vector = [
+                float(value)
+                for value in feature_vector
+            ]
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            continue
+
+        feature_vectors.append(
+            feature_vector
+        )
+
+        valid_cells.append(
+            cell
+        )
+
+    if not feature_vectors:
+
+        raise RuntimeError(
+            "No valid grid feature vectors were available "
+            "for XGBoost prediction."
+        )
+
+    # --------------------------------------------------------
+    # Create DataFrame
+    # --------------------------------------------------------
+
+    try:
+
+        input_df = pd.DataFrame(
+            feature_vectors,
+            columns=feature_names
+        )
+
+        input_df = input_df[
+            feature_names
+        ]
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "Failed to create grid feature DataFrame. "
+            f"Reason: {exc}"
+        ) from exc
+
+    # --------------------------------------------------------
+    # XGBoost prediction
+    # --------------------------------------------------------
+
+    try:
+
+        data = xgb.DMatrix(
+            input_df,
+            feature_names=feature_names
+        )
+
+        probabilities = model.predict(
+            data
+        )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "XGBoost grid prediction failed. "
+            f"Reason: {exc}"
+        ) from exc
+
+    probabilities = np.asarray(
+        probabilities
+    )
+
+    # --------------------------------------------------------
+    # Validate prediction shape
+    # --------------------------------------------------------
+
+    if probabilities.size == 0:
+
+        raise RuntimeError(
+            "XGBoost returned no grid predictions."
+        )
+
+    if probabilities.ndim == 1:
+
+        # For multiple grid cells, we expect
+        # a probability vector for every cell.
+
+        if len(valid_cells) > 1:
+
+            raise RuntimeError(
+                "XGBoost returned a 1D prediction for "
+                "multiple grid cells. Expected a "
+                "2D class-probability matrix."
+            )
+
+        probabilities = probabilities.reshape(
+            1,
+            -1
+        )
+
+    elif probabilities.ndim == 2:
+
+        if probabilities.shape[0] != len(valid_cells):
+
+            raise RuntimeError(
+                "XGBoost prediction count does not match "
+                "the number of grid cells. "
+                f"Cells: {len(valid_cells)}, "
+                f"Predictions: {probabilities.shape[0]}"
+            )
+
+    else:
+
+        raise RuntimeError(
+            "Unexpected XGBoost grid prediction shape: "
+            f"{probabilities.shape}"
+        )
+
+    # --------------------------------------------------------
+    # Build results
+    # --------------------------------------------------------
+
+    predictions = []
+
+    for index, cell in enumerate(
+        valid_cells
+    ):
+
+        class_probabilities = probabilities[
+            index
+        ]
+
+        # ----------------------------------------------------
+        # Predicted class
+        # ----------------------------------------------------
+
+        encoded_prediction = int(
+            np.argmax(
+                class_probabilities
+            )
+        )
+
+        # ----------------------------------------------------
+        # Confidence
+        # ----------------------------------------------------
+
+        confidence = float(
+            np.max(
+                class_probabilities
+            ) * 100
+        )
+
+        # ----------------------------------------------------
+        # Decode class
+        # ----------------------------------------------------
+
+        class_name = None
+
+        if hasattr(
+            encoder,
+            "inverse_transform"
+        ):
+
+            try:
+
+                decoded = encoder.inverse_transform(
+                    [encoded_prediction]
+                )
+
+                if len(decoded) > 0:
+
+                    class_name = str(
+                        decoded[0]
+                    )
+
+            except Exception as exc:
+
+                print(
+                    "Grid label decoding warning:",
+                    exc
+                )
+
+        if not class_name:
+
+            class_name = str(
+                encoded_prediction
+            )
+
+        # ----------------------------------------------------
+        # Area
+        # ----------------------------------------------------
+
+        try:
+
+            area_ha = float(
+                cell.get(
+                    "area_ha",
+                    0.0
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            area_ha = 0.0
+
+        # ----------------------------------------------------
+        # Store prediction
+        # ----------------------------------------------------
+
+        predictions.append(
+            {
+                "grid_id": cell.get(
+                    "grid_id",
+                    index
+                ),
+
+                "geometry": cell.get(
+                    "geometry"
+                ),
+
+                "area_ha": area_ha,
+
+                "class_id": encoded_prediction,
+
+                "class_name": class_name,
+
+                "label": class_name,
+
+                "confidence": round(
+                    confidence,
+                    2
+                ),
+            }
+        )
+
+    return predictions
+    
