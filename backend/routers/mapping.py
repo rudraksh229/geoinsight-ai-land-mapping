@@ -52,51 +52,107 @@ def get_user_id(current_user):
 def get_land_cover_color(class_id=None, class_name=None):
     """
     Return map color according to predicted land-cover class.
+    Handles both encoded class IDs and decoded class labels.
     """
+
+    # --------------------------------------------------------
+    # First try actual class_id
+    # --------------------------------------------------------
 
     if class_id is not None:
         try:
             class_id = int(class_id)
 
-            # Vegetation
+            # Actual land-cover classes
             if class_id in [10, 20, 30, 90]:
                 return "#22c55e"
 
-            # Agriculture
             if class_id == 40:
                 return "#eab308"
 
-            # Built-up
             if class_id == 50:
                 return "#ef4444"
 
-            # Barren
             if class_id == 60:
                 return "#a16207"
 
-            # Water
             if class_id == 80:
                 return "#3b82f6"
 
         except (TypeError, ValueError):
             pass
 
-    if class_name:
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # class_name may contain decoded numeric label
+    # Example: encoded 4 -> class_name "50"
+    # --------------------------------------------------------
+
+    if class_name is not None:
+        try:
+            decoded_class_id = int(class_name)
+
+            if decoded_class_id in [10, 20, 30, 90]:
+                return "#22c55e"
+
+            if decoded_class_id == 40:
+                return "#eab308"
+
+            if decoded_class_id == 50:
+                return "#ef4444"
+
+            if decoded_class_id == 60:
+                return "#a16207"
+
+            if decoded_class_id == 80:
+                return "#3b82f6"
+
+        except (TypeError, ValueError):
+            pass
+
+        # ----------------------------------------------------
+        # Text labels
+        # ----------------------------------------------------
+
         name = str(class_name).lower().strip()
 
-        if "vegetation" in name or "forest" in name:
+        if (
+            "vegetation" in name
+            or "forest" in name
+            or "grass" in name
+            or "shrub" in name
+        ):
             return "#22c55e"
 
-        if "agriculture" in name or "crop" in name:
+        if (
+            "agriculture" in name
+            or "crop" in name
+            or "cropland" in name
+        ):
             return "#eab308"
 
-        if "built" in name or "urban" in name:
+        if (
+            "built" in name
+            or "urban" in name
+            or "settlement" in name
+        ):
             return "#ef4444"
 
-        if "barren" in name:
+        if (
+            "barren" in name
+            or "bare" in name
+            or "fallow" in name
+            or "dry" in name
+            or "wasteland" in name
+        ):
             return "#a16207"
 
-        if "water" in name:
+        if (
+            "water" in name
+            or "river" in name
+            or "lake" in name
+            or "pond" in name
+        ):
             return "#3b82f6"
 
     return "#94a3b8"
@@ -109,36 +165,67 @@ def get_land_cover_color(class_id=None, class_name=None):
 def get_land_cover_category(class_id=None, class_name=None):
     """
     Convert predicted class into dashboard category.
+    Handles both encoded class IDs and decoded class labels.
     """
+
+    # --------------------------------------------------------
+    # First try actual class_id
+    # --------------------------------------------------------
 
     if class_id is not None:
         try:
             class_id = int(class_id)
 
-            # Vegetation
             if class_id in [10, 20, 30, 90]:
                 return "vegetation"
 
-            # Agriculture
             if class_id == 40:
                 return "agriculture"
 
-            # Built-up
             if class_id == 50:
                 return "builtup"
 
-            # Barren
             if class_id == 60:
                 return "barren"
 
-            # Water
             if class_id == 80:
                 return "water"
 
         except (TypeError, ValueError):
             pass
 
-    if class_name:
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # class_name may contain decoded numeric label
+    # Example: encoded 4 -> class_name "50"
+    # --------------------------------------------------------
+
+    if class_name is not None:
+        try:
+            decoded_class_id = int(class_name)
+
+            if decoded_class_id in [10, 20, 30, 90]:
+                return "vegetation"
+
+            if decoded_class_id == 40:
+                return "agriculture"
+
+            if decoded_class_id == 50:
+                return "builtup"
+
+            if decoded_class_id == 60:
+                return "barren"
+
+            if decoded_class_id == 80:
+                return "water"
+
+        except (TypeError, ValueError):
+            pass
+
+        # ----------------------------------------------------
+        # Text labels
+        # ----------------------------------------------------
+
         name = str(class_name).lower().strip()
 
         if "vegetation" in name or "forest" in name:
