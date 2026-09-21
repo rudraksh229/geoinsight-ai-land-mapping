@@ -118,7 +118,14 @@ def dashboard_stats(
         float(a.barren or 0)
         for a in analyses
     )
-
+    if total_area <= 0:
+        total_area = (
+            vegetation
+            + agriculture
+            + water
+            + builtup
+            + barren
+        )
     # --------------------------------------------------------
     # Average AI confidence
     # --------------------------------------------------------
@@ -268,6 +275,7 @@ def dashboard_charts(
         ),
         2,
     )
+    
 
     # --------------------------------------------------------
     # Group data by state
