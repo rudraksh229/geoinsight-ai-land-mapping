@@ -534,9 +534,13 @@ def analyze_land(
             {},
         )
 
+        # =================================================
+        # TOTAL AREA
+        # =================================================
+
         total_area = regional_result.get(
             "total_area",
-            0.0,
+            None,
         )
 
         try:
@@ -544,11 +548,23 @@ def analyze_land(
                 total_area
             )
         except (TypeError, ValueError):
+            total_area = 0.0
+
+        # If regional analysis does not provide a
+        # valid total area, calculate the selected
+        # circular analysis area from the radius.
+
+        if total_area <= 0:
             total_area = (
                 math.pi
                 * (radius ** 2)
                 / 10000.0
             )
+
+        total_area = round(
+            total_area,
+            2,
+        )
 
         # =================================================
         # STEP 2 — CREATE FEATURE GRID
@@ -660,6 +676,31 @@ def analyze_land(
             db_confidence,
             2,
         )
+
+        # =================================================
+        # FINAL RESPONSE STATS
+        # =================================================
+
+        stats = {
+            "totalArea": total_area,
+            "mappedArea": mapped_area,
+            "vegetation": land_cover[
+                "vegetation"
+            ],
+            "agriculturalLand": land_cover[
+                "agriculture"
+            ],
+            "waterBodies": land_cover[
+                "water"
+            ],
+            "builtUpUrban": land_cover[
+                "builtup"
+            ],
+            "barrenLand": land_cover[
+                "barren"
+            ],
+            "confidence": db_confidence,
+        }
 
         # =================================================
         # USER
