@@ -27,6 +27,42 @@ export const downloadReport = async (id) => {
 
         const report = response.data;
 
+        // ------------------------------------------------
+        // Use backend numeric fields for PDF calculations
+        // ------------------------------------------------
+
+        const totalArea = Number(
+            report.total_area ?? 0
+        );
+
+        const mappedArea = Number(
+            report.mapped_area ?? 0
+        );
+
+        const vegetation = Number(
+            report.vegetation_num ?? 0
+        );
+
+        const agriculture = Number(
+            report.agriculture_num ?? 0
+        );
+
+        const water = Number(
+            report.water_num ?? 0
+        );
+
+        const builtup = Number(
+            report.builtup_num ?? 0
+        );
+
+        const barren = Number(
+            report.barren_num ?? 0
+        );
+
+        const confidence = Number(
+            report.confidence ?? 0
+        );
+
         // Create printable HTML
         const reportWindow = window.open(
             "",
@@ -123,7 +159,9 @@ export const downloadReport = async (id) => {
 
                     <div class="card">
                         <div class="label">Report ID</div>
-                        <div class="value">#${report.id ?? id}</div>
+                        <div class="value">
+                            #${report.id ?? id}
+                        </div>
                     </div>
 
                     <div class="card">
@@ -173,80 +211,56 @@ export const downloadReport = async (id) => {
                     <div class="card">
                         <div class="label">Total Area</div>
                         <div class="value">
-                            ${Number(
-                report.total_area ??
-                report.totalArea ??
-                0
-            ).toFixed(2)} Ha
+                            ${totalArea.toFixed(2)} Ha
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="label">Mapped Area</div>
                         <div class="value">
-                            ${Number(
-                report.mapped_area ??
-                report.mappedArea ??
-                0
-            ).toFixed(2)} Ha
+                            ${mappedArea.toFixed(2)} Ha
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="label">Vegetation</div>
                         <div class="value">
-                            ${Number(
-                report.vegetation ?? 0
-            ).toFixed(2)} Ha
+                            ${vegetation.toFixed(2)} Ha
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="label">Agricultural Land</div>
                         <div class="value">
-                            ${Number(
-                report.agriculture ??
-                report.agriculturalLand ??
-                0
-            ).toFixed(2)} Ha
+                            ${agriculture.toFixed(2)} Ha
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="label">Water Bodies</div>
                         <div class="value">
-                            ${Number(
-                report.water ?? 0
-            ).toFixed(2)} Ha
+                            ${water.toFixed(2)} Ha
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="label">Built-up / Urban</div>
                         <div class="value">
-                            ${Number(
-                report.builtup ??
-                report.urbanLand ??
-                0
-            ).toFixed(2)} Ha
+                            ${builtup.toFixed(2)} Ha
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="label">Barren Land</div>
                         <div class="value">
-                            ${Number(
-                report.barren ?? 0
-            ).toFixed(2)} Ha
+                            ${barren.toFixed(2)} Ha
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="label">AI Confidence</div>
                         <div class="value">
-                            ${Number(
-                report.confidence ?? 0
-            ).toFixed(2)}%
+                            ${confidence.toFixed(2)}%
                         </div>
                     </div>
 
