@@ -7,9 +7,12 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+
     VitePWA({
       registerType: 'autoUpdate',
+
       manifest: {
+        id: '/',
         name: 'GeoInsight AI',
         short_name: 'GeoInsight AI',
         description: 'AI-based land mapping and analysis system',
@@ -19,9 +22,10 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/WhatsApp Image 2026-09-22 at 12.42.01 PM.jpeg',
+            src: '/geoinsight-icon-512.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any'
           }
         ]
       }
