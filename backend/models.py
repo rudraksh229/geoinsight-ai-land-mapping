@@ -1,221 +1,170 @@
 from datetime import datetime
-
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-)
-
-from database import Base
+from typing import Optional, Dict, Any
 
 
-class User(Base):
-    __tablename__ = "users"
+class User:
+    collection_name = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    def __init__(
+        self,
+        id: Optional[int] = None,
+        name: str = "",
+        email: str = "",
+        password_hash: str = "",
+        role: str = "user",
+        is_active: bool = True,
+        created_at: Optional[datetime] = None,
+        **kwargs,
+    ):
+        self.id = id
+        self.name = name
+        self.email = email
+        self.password_hash = password_hash
+        self.role = role
+        self.is_active = is_active
+        self.created_at = created_at or datetime.utcnow()
 
-    name = Column(String, nullable=False)
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "email": self.email,
+            "password_hash": self.password_hash,
+            "role": self.role,
+            "is_active": self.is_active,
+            "created_at": self.created_at,
+        }
 
-    email = Column(
-        String,
-        unique=True,
-        nullable=False,
-        index=True,
-    )
-
-    password_hash = Column(
-        String,
-        nullable=False,
-    )
-
-    role = Column(
-        String,
-        default="user",
-        nullable=False,
-    )
-
-    is_active = Column(
-        Boolean,
-        default=True,
-        nullable=False,
-    )
-
-    created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False,
-    )
-
-
-class Analysis(Base):
-    __tablename__ = "analysis"
-
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True,
-    )
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=True,
-        index=True,
-    )
-
-    village = Column(
-        String,
-        nullable=True,
-        default="Amer",
-    )
-
-    district = Column(
-        String,
-        nullable=True,
-        default="JPR",
-    )
-
-    state = Column(
-        String,
-        nullable=True,
-        default="RJ",
-    )
-
-    latitude = Column(
-        Float,
-        nullable=True,
-    )
-
-    longitude = Column(
-        Float,
-        nullable=True,
-    )
-
-    radius = Column(
-        Float,
-        nullable=True,
-    )
-
-    date = Column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False,
-    )
-
-    total_area = Column(
-        Float,
-        default=0.0,
-    )
-
-    mapped_area = Column(
-        Float,
-        default=0.0,
-    )
-
-    vegetation = Column(
-        Float,
-        default=0.0,
-    )
-
-    agriculture = Column(
-        Float,
-        default=0.0,
-    )
-
-    water = Column(
-        Float,
-        default=0.0,
-    )
-
-    builtup = Column(
-        Float,
-        default=0.0,
-    )
-
-    barren = Column(
-        Float,
-        default=0.0,
-    )
-
-    confidence = Column(
-        Float,
-        default=0.0,
-    )
-
-    status = Column(
-        String,
-        default="Completed",
-    )
-
-    created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False,
-    )
+    @classmethod
+    def from_doc(cls, doc: Optional[Dict[str, Any]]) -> Optional["User"]:
+        if not doc:
+            return None
+        return cls(**doc)
 
 
-class Report(Base):
-    __tablename__ = "reports"
+class Analysis:
+    collection_name = "analysis"
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True,
-    )
+    def __init__(
+        self,
+        id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        village: Optional[str] = "Amer",
+        district: Optional[str] = "JPR",
+        state: Optional[str] = "RJ",
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        radius: Optional[float] = None,
+        date: Optional[datetime] = None,
+        total_area: float = 0.0,
+        mapped_area: float = 0.0,
+        vegetation: float = 0.0,
+        agriculture: float = 0.0,
+        water: float = 0.0,
+        builtup: float = 0.0,
+        barren: float = 0.0,
+        confidence: float = 0.0,
+        status: str = "Completed",
+        created_at: Optional[datetime] = None,
+        **kwargs,
+    ):
+        self.id = id
+        self.user_id = user_id
+        self.village = village
+        self.district = district
+        self.state = state
+        self.latitude = latitude
+        self.longitude = longitude
+        self.radius = radius
+        self.date = date or datetime.utcnow()
+        self.total_area = total_area
+        self.mapped_area = mapped_area
+        self.vegetation = vegetation
+        self.agriculture = agriculture
+        self.water = water
+        self.builtup = builtup
+        self.barren = barren
+        self.confidence = confidence
+        self.status = status
+        self.created_at = created_at or datetime.utcnow()
 
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=True,
-        index=True,
-    )
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "village": self.village,
+            "district": self.district,
+            "state": self.state,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "radius": self.radius,
+            "date": self.date,
+            "total_area": self.total_area,
+            "mapped_area": self.mapped_area,
+            "vegetation": self.vegetation,
+            "agriculture": self.agriculture,
+            "water": self.water,
+            "builtup": self.builtup,
+            "barren": self.barren,
+            "confidence": self.confidence,
+            "status": self.status,
+            "created_at": self.created_at,
+        }
 
-    latitude = Column(
-        Float,
-        nullable=False,
-    )
+    @classmethod
+    def from_doc(cls, doc: Optional[Dict[str, Any]]) -> Optional["Analysis"]:
+        if not doc:
+            return None
+        return cls(**doc)
 
-    longitude = Column(
-        Float,
-        nullable=False,
-    )
 
-    radius = Column(
-        Float,
-        nullable=False,
-    )
+class Report:
+    collection_name = "reports"
 
-    vegetation = Column(
-        Float,
-        default=0.0,
-    )
+    def __init__(
+        self,
+        id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        latitude: float = 0.0,
+        longitude: float = 0.0,
+        radius: float = 0.0,
+        vegetation: float = 0.0,
+        water: float = 0.0,
+        builtup: float = 0.0,
+        barren: float = 0.0,
+        suitability_score: float = 0.0,
+        created_at: Optional[datetime] = None,
+        **kwargs,
+    ):
+        self.id = id
+        self.user_id = user_id
+        self.latitude = latitude
+        self.longitude = longitude
+        self.radius = radius
+        self.vegetation = vegetation
+        self.water = water
+        self.builtup = builtup
+        self.barren = barren
+        self.suitability_score = suitability_score
+        self.created_at = created_at or datetime.utcnow()
 
-    water = Column(
-        Float,
-        default=0.0,
-    )
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "radius": self.radius,
+            "vegetation": self.vegetation,
+            "water": self.water,
+            "builtup": self.builtup,
+            "barren": self.barren,
+            "suitability_score": self.suitability_score,
+            "created_at": self.created_at,
+        }
 
-    builtup = Column(
-        Float,
-        default=0.0,
-    )
-
-    barren = Column(
-        Float,
-        default=0.0,
-    )
-
-    suitability_score = Column(
-        Float,
-        default=0.0,
-    )
-
-    created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False,
-    )
+    @classmethod
+    def from_doc(cls, doc: Optional[Dict[str, Any]]) -> Optional["Report"]:
+        if not doc:
+            return None
+        return cls(**doc)

@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 import models
-
 from database import get_db
 from security import get_current_user
 
@@ -21,16 +20,10 @@ def get_user_id(current_user) -> int:
     if isinstance(current_user, dict):
         user_id = current_user.get("id")
     else:
-        user_id = getattr(
-            current_user,
-            "id",
-            None,
-        )
+        user_id = getattr(current_user, "id", None)
 
     if user_id is None:
-        raise ValueError(
-            "Authenticated user ID is missing."
-        )
+        raise ValueError("Authenticated user ID is missing.")
 
     return int(user_id)
 
@@ -38,16 +31,13 @@ def get_user_id(current_user) -> int:
 def empty_dashboard():
     return {
         "hasData": False,
-
         "totalArea": "0.00 Ha",
         "barrenLand": "0.00 Ha",
         "vegetation": "0.00 Ha",
         "agriculturalLand": "0.00 Ha",
         "waterBodies": "0.00 Ha",
         "urbanLand": "0.00 Ha",
-
         "aiConfidence": "0.0%",
-
         "trends": {},
     }
 
@@ -58,66 +48,28 @@ def empty_dashboard():
 
 @router.get("/stats")
 def dashboard_stats(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """
-    Calculate dashboard statistics using only the
-    authenticated user's analyses.
-    """
+    user_id = get_user_id(current_user)
 
-    user_id = get_user_id(
-        current_user
+    docs = list(
+        db["analysis"]
+        .find({"user_id": user_id})
+        .sort("id", -1)
     )
-
-    analyses = (
-        db.query(models.Analysis)
-        .filter(
-            models.Analysis.user_id
-            == user_id
-        )
-        .order_by(
-            models.Analysis.id.desc()
-        )
-        .all()
-    )
+    analyses = [models.Analysis.from_doc(d) for d in docs]
 
     if not analyses:
         return empty_dashboard()
 
-    # --------------------------------------------------------
-    # Aggregate values
-    # --------------------------------------------------------
+    total_area = sum(float(a.total_area or 0) for a in analyses)
+    vegetation = sum(float(a.vegetation or 0) for a in analyses)
+    agriculture = sum(float(a.agriculture or 0) for a in analyses)
+    water = sum(float(a.water or 0) for a in analyses)
+    builtup = sum(float(a.builtup or 0) for a in analyses)
+    barren = sum(float(a.barren or 0) for a in analyses)
 
-    total_area = sum(
-        float(a.total_area or 0)
-        for a in analyses
-    )
-
-    vegetation = sum(
-        float(a.vegetation or 0)
-        for a in analyses
-    )
-
-    agriculture = sum(
-        float(a.agriculture or 0)
-        for a in analyses
-    )
-
-    water = sum(
-        float(a.water or 0)
-        for a in analyses
-    )
-
-    builtup = sum(
-        float(a.builtup or 0)
-        for a in analyses
-    )
-
-    barren = sum(
-        float(a.barren or 0)
-        for a in analyses
-    )
     if total_area <= 0:
         total_area = (
             vegetation
@@ -126,9 +78,6 @@ def dashboard_stats(
             + builtup
             + barren
         )
-    # --------------------------------------------------------
-    # Average AI confidence
-    # --------------------------------------------------------
 
     confidence_values = [
         float(a.confidence)
@@ -137,47 +86,20 @@ def dashboard_stats(
     ]
 
     average_confidence = (
-        sum(confidence_values)
-        / len(confidence_values)
+        sum(confidence_values) / len(confidence_values)
         if confidence_values
         else 0.0
     )
 
-    # --------------------------------------------------------
-    # Return dashboard data
-    # --------------------------------------------------------
-
     return {
         "hasData": True,
-
-        "totalArea": (
-            f"{total_area:.2f} Ha"
-        ),
-
-        "barrenLand": (
-            f"{barren:.2f} Ha"
-        ),
-
-        "vegetation": (
-            f"{vegetation:.2f} Ha"
-        ),
-
-        "agriculturalLand": (
-            f"{agriculture:.2f} Ha"
-        ),
-
-        "waterBodies": (
-            f"{water:.2f} Ha"
-        ),
-
-        "urbanLand": (
-            f"{builtup:.2f} Ha"
-        ),
-
-        "aiConfidence": (
-            f"{average_confidence:.1f}%"
-        ),
-
+        "totalArea": f"{total_area:.2f} Ha",
+        "barrenLand": f"{barren:.2f} Ha",
+        "vegetation": f"{vegetation:.2f} Ha",
+        "agriculturalLand": f"{agriculture:.2f} Ha",
+        "waterBodies": f"{water:.2f} Ha",
+        "urbanLand": f"{builtup:.2f} Ha",
+        "aiConfidence": f"{average_confidence:.1f}%",
         "trends": {},
     }
 
@@ -188,40 +110,26 @@ def dashboard_stats(
 
 @router.get("/charts")
 def dashboard_charts(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """
-    Generate chart data using only the authenticated
-    user's analyses.
-    """
+    user_id = get_user_id(current_user)
 
-    user_id = get_user_id(
-        current_user
+    docs = list(
+        db["analysis"]
+        .find({"user_id": user_id})
+        .sort("id", -1)
     )
-
-    analyses = (
-        db.query(models.Analysis)
-        .filter(
-            models.Analysis.user_id
-            == user_id
-        )
-        .order_by(
-            models.Analysis.id.desc()
-        )
-        .all()
-    )
+    analyses = [models.Analysis.from_doc(d) for d in docs]
 
     if not analyses:
         return {
             "hasData": False,
-
             "pieChart": {
                 "labels": [],
                 "data": [],
                 "backgroundColor": [],
             },
-
             "barChart": {
                 "labels": [],
                 "vegetation": [],
@@ -232,67 +140,16 @@ def dashboard_charts(
             },
         }
 
-    # --------------------------------------------------------
-    # Overall totals
-    # --------------------------------------------------------
-
-    vegetation = round(
-        sum(
-            float(a.vegetation or 0)
-            for a in analyses
-        ),
-        2,
-    )
-
-    agriculture = round(
-        sum(
-            float(a.agriculture or 0)
-            for a in analyses
-        ),
-        2,
-    )
-
-    barren = round(
-        sum(
-            float(a.barren or 0)
-            for a in analyses
-        ),
-        2,
-    )
-
-    urban = round(
-        sum(
-            float(a.builtup or 0)
-            for a in analyses
-        ),
-        2,
-    )
-
-    water = round(
-        sum(
-            float(a.water or 0)
-            for a in analyses
-        ),
-        2,
-    )
-    
-
-    # --------------------------------------------------------
-    # Group data by state
-    # --------------------------------------------------------
+    vegetation = round(sum(float(a.vegetation or 0) for a in analyses), 2)
+    agriculture = round(sum(float(a.agriculture or 0) for a in analyses), 2)
+    barren = round(sum(float(a.barren or 0) for a in analyses), 2)
+    urban = round(sum(float(a.builtup or 0) for a in analyses), 2)
+    water = round(sum(float(a.water or 0) for a in analyses), 2)
 
     state_groups = {}
 
     for analysis in analyses:
-
-        state = (
-            getattr(
-                analysis,
-                "state",
-                None,
-            )
-            or "Unknown"
-        )
+        state = getattr(analysis, "state", None) or "Unknown"
 
         if state not in state_groups:
             state_groups[state] = {
@@ -303,47 +160,16 @@ def dashboard_charts(
                 "water": 0.0,
             }
 
-        state_groups[state][
-            "vegetation"
-        ] += float(
-            analysis.vegetation or 0
-        )
+        state_groups[state]["vegetation"] += float(analysis.vegetation or 0)
+        state_groups[state]["agriculture"] += float(analysis.agriculture or 0)
+        state_groups[state]["barren"] += float(analysis.barren or 0)
+        state_groups[state]["urban"] += float(analysis.builtup or 0)
+        state_groups[state]["water"] += float(analysis.water or 0)
 
-        state_groups[state][
-            "agriculture"
-        ] += float(
-            analysis.agriculture or 0
-        )
-
-        state_groups[state][
-            "barren"
-        ] += float(
-            analysis.barren or 0
-        )
-
-        state_groups[state][
-            "urban"
-        ] += float(
-            analysis.builtup or 0
-        )
-
-        state_groups[state][
-            "water"
-        ] += float(
-            analysis.water or 0
-        )
-
-    states = list(
-        state_groups.keys()
-    )
-
-    # --------------------------------------------------------
-    # Chart response
-    # --------------------------------------------------------
+    states = list(state_groups.keys())
 
     return {
         "hasData": True,
-
         "pieChart": {
             "labels": [
                 "Vegetation",
@@ -352,7 +178,6 @@ def dashboard_charts(
                 "Urban Land",
                 "Water Bodies",
             ],
-
             "data": [
                 vegetation,
                 agriculture,
@@ -360,7 +185,6 @@ def dashboard_charts(
                 urban,
                 water,
             ],
-
             "backgroundColor": [
                 "#22c55e",
                 "#eab308",
@@ -369,58 +193,12 @@ def dashboard_charts(
                 "#3b82f6",
             ],
         },
-
         "barChart": {
             "labels": states,
-
-            "vegetation": [
-                round(
-                    state_groups[state][
-                        "vegetation"
-                    ],
-                    2,
-                )
-                for state in states
-            ],
-
-            "agriculture": [
-                round(
-                    state_groups[state][
-                        "agriculture"
-                    ],
-                    2,
-                )
-                for state in states
-            ],
-
-            "barren": [
-                round(
-                    state_groups[state][
-                        "barren"
-                    ],
-                    2,
-                )
-                for state in states
-            ],
-
-            "urban": [
-                round(
-                    state_groups[state][
-                        "urban"
-                    ],
-                    2,
-                )
-                for state in states
-            ],
-
-            "water": [
-                round(
-                    state_groups[state][
-                        "water"
-                    ],
-                    2,
-                )
-                for state in states
-            ],
+            "vegetation": [round(state_groups[state]["vegetation"], 2) for state in states],
+            "agriculture": [round(state_groups[state]["agriculture"], 2) for state in states],
+            "barren": [round(state_groups[state]["barren"], 2) for state in states],
+            "urban": [round(state_groups[state]["urban"], 2) for state in states],
+            "water": [round(state_groups[state]["water"], 2) for state in states],
         },
     }

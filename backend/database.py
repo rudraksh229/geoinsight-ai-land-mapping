@@ -1,80 +1,74 @@
-
 import os
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import (
-    sessionmaker,
-    declarative_base,
-)
+import certifi
+from pymongo import MongoClient, ReturnDocument
+from pymongo.errors import PyMongoError
 
 
 # ============================================================
 # DATABASE CONFIGURATION
 # ============================================================
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+MONGO_URI = os.getenv("MONGO_URI") or os.getenv("DATABASE_URL")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "geoinsight_ai")
 
-if not DATABASE_URL:
+if not MONGO_URI:
     raise RuntimeError(
-        "DATABASE_URL environment variable is not set. "
-        "Please configure the Render PostgreSQL DATABASE_URL."
-    )
-
-
-# Render may provide the old postgres:// format.
-# SQLAlchemy expects postgresql://.
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace(
-        "postgres://",
-        "postgresql://",
-        1,
+        "MONGO_URI environment variable is not set. "
+        "Please configure your MongoDB connection string."
     )
 
 
 # ============================================================
-# DATABASE ENGINE
+# MONGODB CLIENT & DATABASE
 # ============================================================
 
-engine = create_engine(
-    DATABASE_URL,
-
-    # Detect stale/dead connections before using them.
-    pool_pre_ping=True,
-
-    # Recycle connections periodically.
-    pool_recycle=300,
-
-    # Keep the connection pool small for Render.
-    pool_size=3,
-
-    # Allow a small number of temporary connections
-    # during short traffic bursts.
-    max_overflow=2,
-
-    # Prevent requests from hanging indefinitely
-    # when PostgreSQL is unreachable.
-    connect_args={
-        "connect_timeout": 10,
-    },
+client = MongoClient(
+    MONGO_URI,
+    tlsCAFile=certifi.where(),
+    serverSelectionTimeoutMS=10000,
+    connectTimeoutMS=10000,
+    maxPoolSize=10,
 )
 
-
-# ============================================================
-# SESSION
-# ============================================================
-
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-)
+mongo_db = client[MONGO_DB_NAME]
 
 
 # ============================================================
-# BASE MODEL
+# AUTO-INCREMENT ID HELPER (Keeps PostgreSQL integer ID compatibility)
 # ============================================================
 
-Base = declarative_base()
+def get_next_sequence(sequence_name: str) -> int:
+    """
+    Generate sequential integer IDs (1, 2, 3...) in MongoDB
+    so existing frontend routes and integer ID checks continue working.
+    """
+    counter = mongo_db["counters"].find_one_and_update(
+        {"_id": sequence_name},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return int(counter["seq"])
+
+
+# ============================================================
+# STARTUP INDEX INITIALIZATION
+# ============================================================
+
+def init_db():
+    """
+    Verify MongoDB connection and create required indexes.
+    """
+    client.admin.command("ping")
+
+    mongo_db["users"].create_index("id", unique=True)
+    mongo_db["users"].create_index("email", unique=True)
+
+    mongo_db["analysis"].create_index("id", unique=True)
+    mongo_db["analysis"].create_index("user_id")
+
+    mongo_db["reports"].create_index("id", unique=True)
+    mongo_db["reports"].create_index("user_id")
 
 
 # ============================================================
@@ -82,19 +76,13 @@ Base = declarative_base()
 # ============================================================
 
 def get_db():
-    db = SessionLocal()
-
+    """
+    Yield the MongoDB database instance so existing
+    Depends(get_db) signatures in routers require zero changes.
+    """
     try:
-        yield db
-
-    except Exception as exc:
-        db.rollback()
-
-        print(
-            f"[Database Session Error] {exc}"
-        )
-
+        yield mongo_db
+    except PyMongoError as exc:
+        print(f"[Database Error] {exc}")
         raise
-
-    finally:
-        db.close()
+    

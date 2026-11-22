@@ -4,11 +4,11 @@ import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 import models
 from schemas import MappingRequest
-from database import get_db
+from database import get_db, get_next_sequence
 from security import get_current_user
 
 from services.analysis_service import AnalysisService
@@ -430,7 +430,7 @@ def create_circle_geojson(
 @router.post("/analyze")
 def analyze_land(
     request_data: MappingRequest,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
@@ -438,14 +438,14 @@ def analyze_land(
 
     Flow:
 
-    1. Validate request
-    2. Extract regional features
-    3. Generate grid
-    4. Predict every grid cell
-    5. Generate multi-color GeoJSON
-    6. Calculate land-cover areas
-    7. Save analysis in PostgreSQL
-    8. Return complete mapping result
+1. Validate request
+2. Extract regional features
+3. Generate grid
+4. Predict every grid cell
+5. Generate multi-color GeoJSON
+6. Calculate land-cover areas
+7. Save analysis in MongoDB
+8. Return complete mapping result
     """
 
     start_time = time.time()
@@ -714,7 +714,11 @@ def analyze_land(
         # STEP 6 — SAVE ANALYSIS
         # =================================================
 
+        now = datetime.utcnow()
+        new_analysis_id = get_next_sequence("analysis")
+
         analysis = models.Analysis(
+            id=new_analysis_id,
 
             user_id=user_id,
 
@@ -742,7 +746,7 @@ def analyze_land(
 
             radius=radius,
 
-            date=datetime.utcnow(),
+            date=now,
 
             total_area=round(
                 total_area,
@@ -774,13 +778,11 @@ def analyze_land(
             confidence=db_confidence,
 
             status="Completed",
+
+            created_at=now,
         )
 
-        db.add(analysis)
-
-        db.commit()
-
-        db.refresh(analysis)
+        db["analysis"].insert_one(analysis.to_dict())
 
         # =================================================
         # PROCESSING TIME
@@ -875,8 +877,6 @@ def analyze_land(
             "Land mapping analysis failed."
         )
 
-        db.rollback()
-
         raise HTTPException(
             status_code=500,
             detail=(
@@ -884,3 +884,4 @@ def analyze_land(
                 f"{str(exc)}"
             ),
         ) from exc
+        

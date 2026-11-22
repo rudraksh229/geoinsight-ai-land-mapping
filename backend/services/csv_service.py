@@ -1,31 +1,24 @@
-
 import os
-
 import pandas as pd
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from models import Analysis
 
 
 def export_csv(
-    db: Session,
+    db: Database,
     user_id: int,
 ):
     """
     Export analysis records for the authenticated user
     as a CSV file.
     """
-
-    analyses = (
-        db.query(Analysis)
-        .filter(
-            Analysis.user_id == user_id
-        )
-        .order_by(
-            Analysis.created_at.desc()
-        )
-        .all()
+    docs = list(
+        db["analysis"]
+        .find({"user_id": int(user_id)})
+        .sort("created_at", -1)
     )
+    analyses = [Analysis.from_doc(d) for d in docs]
 
     data = []
 
@@ -51,19 +44,9 @@ def export_csv(
             "Created At": analysis.created_at,
         })
 
-    os.makedirs(
-        "exports",
-        exist_ok=True,
-    )
+    os.makedirs("exports", exist_ok=True)
+    filename = os.path.join("exports", "reports.csv")
 
-    filename = os.path.join(
-        "exports",
-        "reports.csv",
-    )
-
-    pd.DataFrame(data).to_csv(
-        filename,
-        index=False,
-    )
+    pd.DataFrame(data).to_csv(filename, index=False)
 
     return filename

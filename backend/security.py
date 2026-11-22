@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from database import get_db
 from models import User
@@ -58,9 +58,7 @@ def create_access_token(
             + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         )
 
-    to_encode.update({
-        "exp": expire
-    })
+    to_encode.update({"exp": expire})
 
     return jwt.encode(
         to_encode,
@@ -71,13 +69,9 @@ def create_access_token(
 
 def get_current_user(
     request: Request,
-    credentials: Optional[
-        HTTPAuthorizationCredentials
-    ] = Depends(security),
-    db: Session = Depends(get_db)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Database = Depends(get_db)
 ):
-    # CORS preflight requests are handled by CORSMiddleware.
-    # Keep this guard only for compatibility with existing workflow.
     if request.method == "OPTIONS":
         return None
 
@@ -113,11 +107,8 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+    user_doc = db["users"].find_one({"email": email})
+    user = User.from_doc(user_doc)
 
     if user is None:
         raise HTTPException(

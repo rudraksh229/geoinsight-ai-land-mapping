@@ -1,19 +1,15 @@
 import os
-
 import uvicorn
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-
 # ============================================================
 # DATABASE
 # ============================================================
 
-from database import engine, Base
-from models import User, Analysis, Report
-
+from database import init_db
 
 # ============================================================
 # ROUTERS
@@ -46,7 +42,6 @@ from routers import (
     mapping,
 )
 
-
 # ============================================================
 # APPLICATION
 # ============================================================
@@ -56,7 +51,6 @@ app = FastAPI(
     description="AI-based Land Mapping and Analysis API",
     version="1.0.0",
 )
-
 
 # ============================================================
 # CORS
@@ -68,7 +62,6 @@ origins = [
     "http://localhost:5173",
     "http://localhost:3000",
 ]
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -86,7 +79,6 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-
 # ============================================================
 # STARTUP
 # ============================================================
@@ -94,37 +86,22 @@ app.add_middleware(
 @app.on_event("startup")
 def startup_event():
     """
-    Initialize application resources when FastAPI starts.
-
-    Database tables are created only if they do not already exist.
-    Existing PostgreSQL data is not deleted or recreated.
+    Initialize MongoDB connection and indexes when FastAPI starts.
     """
-
     print("=" * 60)
     print("GeoInsight AI backend starting...")
     print("=" * 60)
 
     try:
-        Base.metadata.create_all(
-            bind=engine
-        )
-
+        init_db()
         print(
-            "[Database] PostgreSQL connection "
-            "and table initialization successful."
+            "[Database] MongoDB connection "
+            "and index initialization successful."
         )
-
     except Exception as exc:
-        print(
-            "[Database] Initialization failed:"
-        )
-
-        print(
-            str(exc)
-        )
-
+        print("[Database] Initialization failed:")
+        print(str(exc))
         raise
-
 
 # ============================================================
 # GLOBAL EXCEPTION HANDLER
@@ -148,7 +125,6 @@ async def global_exception_handler(
         },
     )
 
-
 # ============================================================
 # HEALTH CHECK
 # ============================================================
@@ -160,14 +136,12 @@ def read_root():
         "message": "Land Mapping API Running",
     }
 
-
 @app.get("/health")
 def health_check():
     return {
         "status": "healthy",
         "service": "GeoInsight AI Engine",
     }
-
 
 # ============================================================
 # ROUTER REGISTRATION
@@ -200,25 +174,15 @@ routers_list = [
     mapping,
 ]
 
-
 for router_module in routers_list:
-    app.include_router(
-        router_module.router
-    )
-
+    app.include_router(router_module.router)
 
 # ============================================================
 # LOCAL DEVELOPMENT
 # ============================================================
 
 if __name__ == "__main__":
-    port = int(
-        os.environ.get(
-            "PORT",
-            8000,
-        )
-    )
-
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

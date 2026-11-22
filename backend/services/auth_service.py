@@ -1,6 +1,8 @@
-from sqlalchemy.orm import Session
+from datetime import datetime
+from pymongo.database import Database
 from fastapi import HTTPException, status
 
+from database import get_next_sequence
 from models import User
 from schemas import UserRegister, UserLogin
 
@@ -12,14 +14,11 @@ from security import (
 
 
 def register_user(
-    db: Session,
+    db: Database,
     user: UserRegister,
 ):
-    existing = (
-        db.query(User)
-        .filter(User.email == user.email)
-        .first()
-    )
+    clean_email = str(user.email).strip().lower()
+    existing = db["users"].find_one({"email": clean_email})
 
     if existing:
         raise HTTPException(
@@ -27,22 +26,21 @@ def register_user(
             detail="Email already exists.",
         )
 
-    new_user = User(
-        name=user.name.strip(),
-        email=str(user.email).strip().lower(),
-        password_hash=hash_password(user.password),
-        role="user",
-        is_active=True,
-    )
-
     try:
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
+        new_id = get_next_sequence("users")
+        new_user = User(
+            id=new_id,
+            name=user.name.strip(),
+            email=clean_email,
+            password_hash=hash_password(user.password),
+            role="user",
+            is_active=True,
+            created_at=datetime.utcnow(),
+        )
+
+        db["users"].insert_one(new_user.to_dict())
 
     except Exception as exc:
-        db.rollback()
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create user account.",
@@ -62,26 +60,18 @@ def register_user(
 
 
 def login_user(
-    db: Session,
+    db: Database,
     credentials: UserLogin,
 ):
-    email = str(
-        credentials.email
-    ).strip().lower()
-
-    user = (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+    email = str(credentials.email).strip().lower()
+    user_doc = db["users"].find_one({"email": email})
+    user = User.from_doc(user_doc)
 
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
-            headers={
-                "WWW-Authenticate": "Bearer"
-            },
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not user.is_active:
@@ -97,16 +87,10 @@ def login_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
-            headers={
-                "WWW-Authenticate": "Bearer"
-            },
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = create_access_token(
-        {
-            "sub": user.email,
-        }
-    )
+    token = create_access_token({"sub": user.email})
 
     return {
         "success": True,
