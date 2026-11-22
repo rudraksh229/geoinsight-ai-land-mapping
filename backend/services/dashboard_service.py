@@ -1,5 +1,5 @@
 
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 import models
 

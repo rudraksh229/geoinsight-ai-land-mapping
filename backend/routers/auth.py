@@ -1,7 +1,7 @@
 print("AUTH ROUTER LOADED")
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from database import get_db
 from schemas import UserRegister, UserLogin
@@ -28,7 +28,7 @@ router = APIRouter(
 @router.post("/register")
 def register(
     user: UserRegister,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
 ):
     try:
         return register_user(
@@ -49,7 +49,7 @@ def register(
 @router.post("/login")
 def login(
     credentials: UserLogin,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
 ):
     try:
         return login_user(

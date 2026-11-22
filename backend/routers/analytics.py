@@ -5,7 +5,7 @@ from fastapi import (
     HTTPException,
 )
 
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from database import get_db
 from security import get_current_user
@@ -23,7 +23,7 @@ router = APIRouter(
 
 @router.get("/summary")
 def dashboard_summary(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """

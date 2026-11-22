@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 import schemas
 
@@ -20,7 +20,7 @@ router = APIRouter(
 
 @router.get("")
 def get_reports(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
@@ -40,7 +40,7 @@ def get_reports(
 @router.get("/{report_id}")
 def get_report(
     report_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
@@ -70,7 +70,7 @@ def get_report(
 @router.post("")
 def create_report(
     analysis: schemas.AnalysisCreate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
@@ -91,7 +91,7 @@ def create_report(
 @router.delete("/{report_id}")
 def delete_report(
     report_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
