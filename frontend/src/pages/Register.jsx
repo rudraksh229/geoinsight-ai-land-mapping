@@ -9,7 +9,7 @@ const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
 
@@ -22,30 +22,38 @@ const Register = () => {
     e.preventDefault();
 
     if (!username || !email || !password) {
-        showToast("Please fill in all fields", "error");
-        return;
+      showToast("Please fill in all fields", "error");
+      return;
+    }
+
+    if (password.length < 6) {
+      showToast("Password must be at least 6 characters long.", "error");
+      return;
     }
 
     setIsSubmitting(true);
 
     try {
-        await registerService({
-            name: username,
-            email,
-            password,
-        });
+      await registerService({
+        name: username,
+        email,
+        password,
+      });
 
-        showToast("Registration Successful! Please log in.", "success");
+      showToast("Registration Successful! Please log in.", "success");
 
-        setTimeout(() => {
-            navigate("/login");
-        }, 1500);
+      setTimeout(() => {
+        navigate("/login");
+      }, 1500);
 
     } catch (error) {
-        console.log(error);
-        
-        const errorMsg = error.response?.data?.detail || "Registration failed. Please try again.";
-        showToast(errorMsg, "error");
+      console.log(error);
+
+      const detail = error.response?.data?.detail;
+      const errorMsg = Array.isArray(detail)
+        ? detail.map((d) => d.msg).join(", ")
+        : detail || "Registration failed. Please try again.";
+      showToast(errorMsg, "error");
     }
 
     setIsSubmitting(false);
@@ -115,13 +123,17 @@ const Register = () => {
             <input
               id="password"
               type="password"
+              minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-600 focus:border-green-500 focus:bg-slate-800 rounded-xl text-xs font-bold outline-hidden transition-all text-slate-100 placeholder-slate-500 tech-mono"
-              placeholder="••••••••"
+              placeholder="Minimum 6 characters"
               required
             />
           </div>
+          <p className="text-[11px] font-semibold text-slate-400 mt-1.5 tech-mono">
+            Minimum 6 characters required
+          </p>
         </div>
 
         <button
